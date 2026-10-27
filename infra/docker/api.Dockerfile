@@ -9,6 +9,7 @@ COPY . .
 # "@spiceos/api..." construye también los paquetes del workspace de los que depende (contracts).
 # El cliente de Prisma se genera dentro de /out porque deploy instala un @prisma/client nuevo.
 RUN pnpm install --frozen-lockfile \
+ && pnpm --filter @spiceos/api exec prisma generate \
  && pnpm --filter "@spiceos/api..." build \
  && pnpm --filter @spiceos/api deploy --legacy --prod /out \
  && cd /out && /repo/apps/api/node_modules/.bin/prisma generate --schema prisma/schema.prisma
