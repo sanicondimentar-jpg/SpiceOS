@@ -21,6 +21,7 @@ import { CrmFacade } from '../crm/crm.facade';
 import { InventoryFacade } from '../inventory/inventory.facade';
 import { InventoryService } from '../inventory/inventory.service';
 import { priceLines } from '../sales/quote-pricing';
+import { orderTax } from './order-tax';
 
 class OrderEvents extends AggregateRoot {
   emit(e: DomainEvent) {
@@ -93,6 +94,7 @@ export class OrdersService {
         subtotal: pricing.subtotal,
         discountTotal: pricing.discountTotal,
         total: pricing.total,
+        ...orderTax(pricing.total, input.withInvoice),
         ...(canSeeCost && { marginTotal: pricing.marginTotal }),
         warnings: [
           ...missing.map((l) => `${priced.get(l.variantId)!.name} no tiene precio en la lista del cliente; indicá un precio`),
@@ -124,6 +126,7 @@ export class OrdersService {
           subtotal: pricing.subtotal,
           discountTotal: pricing.discountTotal,
           total: pricing.total,
+          ...this.tax(pricing.total, input.withInvoice),
           marginTotal: pricing.marginTotal,
           requestedDate: input.requestedDate ? new Date(input.requestedDate) : null,
           notes: input.notes,
@@ -137,7 +140,7 @@ export class OrdersService {
       events.emit(new DomainEvent('order.created', 'order', id, { orderId: id, customerId: input.customerId, total: pricing.total }));
       scope.track(events);
       scope.auditLog({ action: 'order.create', entityType: 'order', entityId: id, after: { number, total: pricing.total } });
-      return { id, number, total: pricing.total };
+      return { id, number, total: pricing.total, ...orderTax(pricing.total, input.withInvoice) };
     });
   }
 
@@ -151,6 +154,7 @@ export class OrdersService {
       const data: Record<string, unknown> = {
         ...(input.warehouseId && { warehouseId: input.warehouseId }),
         ...(input.notes !== undefined && { notes: input.notes }),
+        ...(input.withInvoice !== undefined && { withInvoice: input.withInvoice }),
         ...(input.requestedDate !== undefined && { requestedDate: input.requestedDate ? new Date(input.requestedDate) : null }),
       };
       if (input.lines) {
@@ -165,6 +169,8 @@ export class OrdersService {
           marginTotal: pricing.marginTotal,
         });
       }
+      // El IVA se recalcula si cambian las líneas o si pasa a ser con o sin factura.
+      Object.assign(data, this.tax(Number(data.total ?? order.total), input.withInvoice ?? order.withInvoice));
       await tx.salesOrder.update({ where: { id }, data: { ...data, version: { increment: 1 } } });
       scope.auditLog({ action: 'order.update', entityType: 'order', entityId: id, before: { total: Number(order.total) }, after: data });
       return { id, version: order.version + 1 };
@@ -249,6 +255,7 @@ export class OrdersService {
         customer: o.customer.tradeName ?? o.customer.legalName,
         channel: o.channel,
         total: Number(o.total),
+        ...orderTax(Number(o.total), o.withInvoice),
         lines: o._count.lines,
         requestedDate: o.requestedDate,
         createdAt: o.createdAt,
@@ -292,6 +299,7 @@ export class OrdersService {
         subtotal: Number(o.subtotal),
         discountTotal: Number(o.discountTotal),
         total: Number(o.total),
+        ...orderTax(Number(o.total), o.withInvoice),
         ...(canSeeCost && { marginTotal: Number(o.marginTotal) }),
         createdAt: o.createdAt,
         confirmedAt: o.confirmedAt,
@@ -312,6 +320,11 @@ export class OrdersService {
         history: o.statusHistory.map((h) => ({ from: h.from, to: h.to, at: h.changedAt, by: h.changedBy, reason: h.reason })),
       };
     });
+  }
+
+  private tax(net: number, withInvoice: boolean) {
+    const { taxTotal } = orderTax(net, withInvoice);
+    return { withInvoice, taxTotal };
   }
 
   private lineData(l: { variantId: string; quantity: number; unitPrice: number; discountPct: number; unitCost: number; lineTotal: number }) {

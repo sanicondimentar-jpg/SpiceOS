@@ -58,6 +58,8 @@ export const createOrderSchema = z.object({
   warehouseId: z.string().uuid(),
   quoteId: z.string().uuid().optional(),
   channel: z.enum(['sales_rep', 'whatsapp', 'portal', 'copilot']).default('sales_rep'),
+  /** Sin factura se vende al precio sin IVA y no se suma IVA. */
+  withInvoice: z.boolean().default(true),
   requestedDate: z.string().date().optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(quoteLineSchema).min(1),
@@ -66,13 +68,13 @@ export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
 /** Solo pedidos en borrador: se reemplazan las líneas y se recalculan los precios. */
 export const updateOrderSchema = createOrderSchema
-  .pick({ warehouseId: true, requestedDate: true, notes: true, lines: true })
+  .pick({ warehouseId: true, withInvoice: true, requestedDate: true, notes: true, lines: true })
   .partial()
   .extend({ version: z.number().int().positive() });
 export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;
 
 /** Precios, margen y stock disponible de un pedido sin guardarlo. */
-export const orderPreviewSchema = createOrderSchema.pick({ customerId: true, warehouseId: true, lines: true });
+export const orderPreviewSchema = createOrderSchema.pick({ customerId: true, warehouseId: true, withInvoice: true, lines: true });
 export type OrderPreviewInput = z.infer<typeof orderPreviewSchema>;
 
 export const orderTransitionSchema = z.object({

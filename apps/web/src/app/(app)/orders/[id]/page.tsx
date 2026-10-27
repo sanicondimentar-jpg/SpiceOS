@@ -59,6 +59,7 @@ function Order({ id }: { id: string }) {
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-semibold">Pedido {o.number}</h1>
             <Badge tone={STATUS_TONE[o.status]}>{STATUS_LABEL[o.status]}</Badge>
+            <Badge>{o.withInvoice ? 'Con factura' : 'Sin factura'}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">
             <Link href={`/customers/${o.customer.id}`} className="font-medium text-foreground hover:underline">{o.customer.tradeName ?? o.customer.legalName}</Link>
@@ -169,7 +170,9 @@ function Lines({ order }: { order: OrderDetail }) {
           {!!order.discountTotal && (
             <tr><td colSpan={10} className="px-4 pt-3 text-right text-muted-foreground">Descuentos − {money(order.discountTotal)}</td></tr>
           )}
-          <tr><td colSpan={10} className="px-4 py-3 text-right text-base font-semibold">Total sin IVA {money(order.total)}</td></tr>
+          <tr><td colSpan={10} className="px-4 pt-3 text-right text-muted-foreground">Total sin IVA {money(order.total)}</td></tr>
+          <tr><td colSpan={10} className="px-4 pt-1 text-right text-muted-foreground">{order.withInvoice ? `IVA 21 % ${money(order.taxTotal)}` : 'Sin factura: no lleva IVA'}</td></tr>
+          <tr><td colSpan={10} className="px-4 py-3 text-right text-base font-semibold">Total a cobrar {money(order.grandTotal)}</td></tr>
           {order.marginTotal != null && (
             <tr className="print:hidden"><td colSpan={10} className="px-4 pb-3 text-right text-muted-foreground">Margen {money(order.marginTotal)}</td></tr>
           )}
@@ -207,6 +210,7 @@ function EditDraft({ order, onDone }: { order: OrderDetail; onDone: () => void }
         initial={{
           customer: { id: order.customer.id, name: order.customer.tradeName ?? order.customer.legalName },
           warehouseId: order.warehouse.id,
+          withInvoice: order.withInvoice,
           requestedDate: order.requestedDate?.slice(0, 10) ?? '',
           notes: order.notes ?? '',
           lines: order.lines.map((l) => ({
@@ -225,7 +229,7 @@ function EditDraft({ order, onDone }: { order: OrderDetail; onDone: () => void }
             label: 'Guardar cambios',
             onSubmit: (d) =>
               update.mutate(
-                { version: order.version, warehouseId: d.warehouseId, requestedDate: d.requestedDate, notes: d.notes ?? '', lines: d.lines },
+                { version: order.version, warehouseId: d.warehouseId, withInvoice: d.withInvoice, requestedDate: d.requestedDate, notes: d.notes ?? '', lines: d.lines },
                 { onSuccess: onDone },
               ),
           },

@@ -788,7 +788,8 @@ model SalesOrder {
   subtotal      Decimal     @default(0) @db.Decimal(18, 4)
   discountTotal Decimal     @default(0) @map("discount_total") @db.Decimal(18, 4)
   taxTotal      Decimal     @default(0) @map("tax_total") @db.Decimal(18, 4)
-  total         Decimal     @default(0) @db.Decimal(18, 4)
+  total         Decimal     @default(0) @db.Decimal(18, 4) // sin IVA; a cobrar = total + taxTotal
+  withInvoice   Boolean     @default(true) @map("with_invoice") // sin factura: no lleva IVA
   marginTotal   Decimal     @default(0) @map("margin_total") @db.Decimal(18, 4)
   deliveryAddressId String? @map("delivery_address_id") @db.Uuid
   requestedDate DateTime?   @map("requested_date") @db.Date

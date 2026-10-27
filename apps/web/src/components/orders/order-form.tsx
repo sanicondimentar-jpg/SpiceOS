@@ -26,6 +26,7 @@ export interface OrderDraftLine {
 export interface OrderFormValue {
   customer: { id: string; name: string } | null;
   warehouseId: string;
+  withInvoice: boolean;
   requestedDate: string;
   notes: string;
   lines: OrderDraftLine[];
@@ -35,6 +36,7 @@ export interface OrderFormSubmit {
   customerId: string;
   warehouseId: string;
   branchId: string;
+  withInvoice: boolean;
   requestedDate?: string;
   notes?: string;
   lines: { variantId: string; quantity: number; unitPrice?: number; discountPct: number }[];
@@ -51,7 +53,7 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
   const { data: warehouses } = useWarehouses();
   const { data: me } = useMe();
   const canSeeCost = !!me?.permissions.includes('catalog.cost.read');
-  const [value, setValue] = useState<OrderFormValue>({ customer: null, warehouseId: '', requestedDate: '', notes: '', lines: [], ...initial });
+  const [value, setValue] = useState<OrderFormValue>({ customer: null, warehouseId: '', withInvoice: true, requestedDate: '', notes: '', lines: [], ...initial });
   const set = (patch: Partial<OrderFormValue>) => setValue((v) => ({ ...v, ...patch }));
   useEffect(() => {
     if (!value.warehouseId && warehouses?.length) set({ warehouseId: warehouses[0].id });
@@ -64,13 +66,13 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
     if (!value.customer || !value.warehouseId || !parsed.ok || !parsed.lines.length) return void setResult(null);
     const t = setTimeout(() => {
       preview.mutate(
-        { customerId: value.customer!.id, warehouseId: value.warehouseId, lines: parsed.lines },
+        { customerId: value.customer!.id, warehouseId: value.warehouseId, withInvoice: value.withInvoice, lines: parsed.lines },
         { onSuccess: setResult, onError: () => setResult(null) },
       );
     }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value.customer?.id, value.warehouseId, parsed.key]);
+  }, [value.customer?.id, value.warehouseId, value.withInvoice, parsed.key]);
 
   const byVariant = new Map(result?.lines.map((l) => [l.variantId, l]));
   const addLine = (l: Omit<OrderDraftLine, 'quantity' | 'unitPrice' | 'discountPct'>) => {
@@ -86,6 +88,7 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
       customerId: value.customer.id,
       warehouseId: warehouse.id,
       branchId: warehouse.branchId,
+      withInvoice: value.withInvoice,
       requestedDate: optText(value.requestedDate),
       notes: optText(value.notes),
       lines: parsed.lines,
@@ -121,7 +124,13 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
           <Field label="Entrega pedida" htmlFor="requestedDate">
             <Input id="requestedDate" type="date" value={value.requestedDate} onChange={(e) => set({ requestedDate: e.target.value })} />
           </Field>
-          <Field label="Notas" htmlFor="notes" className="sm:col-span-2 lg:col-span-4">
+          <Field label="Facturación" htmlFor="withInvoice">
+            <Select id="withInvoice" value={value.withInvoice ? 'yes' : 'no'} onChange={(e) => set({ withInvoice: e.target.value === 'yes' })}>
+              <option value="yes">Con factura (+ IVA 21 %)</option>
+              <option value="no">Sin factura (sin IVA)</option>
+            </Select>
+          </Field>
+          <Field label="Notas" htmlFor="notes" className="sm:col-span-2 lg:col-span-3">
             <Input id="notes" value={value.notes} placeholder="Horario de entrega, forma de pago, aclaraciones…" onChange={(e) => set({ notes: e.target.value })} />
           </Field>
         </CardContent>
@@ -205,7 +214,9 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
           <CardContent className="space-y-2 p-5 text-sm">
             <Row label="Subtotal" value={money(result?.subtotal)} />
             {!!result?.discountTotal && <Row label="Descuentos" value={`− ${money(result.discountTotal)}`} />}
-            <Row label="Total sin IVA" value={money(result?.total)} strong />
+            <Row label="Total sin IVA" value={money(result?.total)} />
+            {value.withInvoice ? <Row label="IVA 21 %" value={money(result?.taxTotal)} /> : <Row label="Sin factura" value="no lleva IVA" />}
+            <Row label="Total a cobrar" value={money(result?.grandTotal)} strong />
             {canSeeCost && result?.marginTotal != null && <Row label="Margen" value={money(result.marginTotal)} />}
             <div className="flex flex-wrap justify-end gap-2 pt-2">
               {actions.map((a) => (

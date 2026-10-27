@@ -54,7 +54,7 @@ export default function OrdersPage() {
               <th className="px-4 py-3 font-medium">Canal</th>
               <th className="px-4 py-3 font-medium">Fecha</th>
               <th className="px-4 py-3 font-medium">Entrega</th>
-              <th className="px-4 py-3 text-right font-medium">Total sin IVA</th>
+              <th className="px-4 py-3 text-right font-medium">Total a cobrar</th>
             </tr>
           </thead>
           <tbody>
@@ -67,7 +67,10 @@ export default function OrdersPage() {
                 <td className="px-4 py-2.5 text-muted-foreground">{CHANNEL_LABEL[o.channel] ?? o.channel}</td>
                 <td className="px-4 py-2.5">{date(o.createdAt)}</td>
                 <td className="px-4 py-2.5">{date(o.requestedDate)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{money(o.total)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">
+                  {money(o.grandTotal)}
+                  {!o.withInvoice && <div className="text-xs text-muted-foreground">sin factura</div>}
+                </td>
               </tr>
             ))}
             {data?.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">No hay pedidos{status && ` ${STATUS_LABEL[status].toLowerCase()}s`}.</td></tr>}
