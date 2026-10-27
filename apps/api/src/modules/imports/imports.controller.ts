@@ -33,14 +33,22 @@ export class ImportsController {
     return this.imports.importProducts(requireFile(file), options);
   }
 
+  @Post('stock')
+  @ApiConsumes('multipart/form-data')
+  @RequirePermissions(PERMISSIONS.inventory.adjust)
+  @UseInterceptors(upload)
+  stock(@UploadedFile() file: Express.Multer.File | undefined, @Query(new ZodPipe(importOptionsSchema)) options: ImportOptions) {
+    return this.imports.importStock(requireFile(file), options);
+  }
+
   @Get('templates/:kind')
   @RequirePermissions(PERMISSIONS.crm.customerRead)
-  async template(@Param('kind', new ParseEnumPipe(['customers', 'products'])) kind: 'customers' | 'products', @Res() res: Response) {
+  async template(@Param('kind', new ParseEnumPipe(['customers', 'products', 'stock'])) kind: 'customers' | 'products' | 'stock', @Res() res: Response) {
     const buffer = await this.imports.template(kind);
     res
       .set({
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename="plantilla-${kind === 'customers' ? 'clientes' : 'productos'}.xlsx"`,
+        'Content-Disposition': `attachment; filename="plantilla-${{ customers: 'clientes', products: 'productos', stock: 'stock' }[kind]}.xlsx"`,
       })
       .send(buffer);
   }

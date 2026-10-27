@@ -836,10 +836,30 @@ model SalesOrderLine {
   unitCost    Decimal @map("unit_cost") @db.Decimal(18, 4)
   lineTotal   Decimal @map("line_total") @db.Decimal(18, 4)
 
-  order   SalesOrder     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  variant ProductVariant @relation(fields: [variantId], references: [id])
+  order       SalesOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant     ProductVariant    @relation(fields: [variantId], references: [id])
+  allocations OrderAllocation[]
 
   @@map("sales_order_lines")
+}
+
+// Stock reservado para cada línea al confirmar (por lote, FEFO). Al despachar se descuenta
+// de esos mismos saldos; al cancelar se libera.
+model OrderAllocation {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  orderLineId String   @map("order_line_id") @db.Uuid
+  stockItemId String   @map("stock_item_id") @db.Uuid
+  lotId       String?  @map("lot_id") @db.Uuid
+  quantity    Decimal  @db.Decimal(18, 3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  line      SalesOrderLine @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  stockItem StockItem      @relation(fields: [stockItemId], references: [id])
+  lot       Lot?           @relation(fields: [lotId], references: [id])
+
+  @@index([orderLineId])
+  @@map("order_allocations")
 }
 
 model OrderStatusHistory {
@@ -890,8 +910,9 @@ model Lot {
   analysisDocumentId String? @map("analysis_document_id") @db.Uuid
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
-  variant    ProductVariant @relation(fields: [variantId], references: [id])
-  stockItems StockItem[]
+  variant     ProductVariant    @relation(fields: [variantId], references: [id])
+  stockItems  StockItem[]
+  allocations OrderAllocation[]
 
   @@unique([tenantId, variantId, code])
   @@index([tenantId, expiresAt])
@@ -912,7 +933,8 @@ model StockItem {
 
   warehouse Warehouse      @relation(fields: [warehouseId], references: [id])
   variant   ProductVariant @relation(fields: [variantId], references: [id])
-  lot       Lot?           @relation(fields: [lotId], references: [id])
+  lot         Lot?              @relation(fields: [lotId], references: [id])
+  allocations OrderAllocation[]
 
   @@unique([warehouseId, variantId, lotId])
   @@index([tenantId, variantId])

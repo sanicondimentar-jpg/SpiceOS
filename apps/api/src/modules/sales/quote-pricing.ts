@@ -1,3 +1,4 @@
+import { BusinessRuleError } from '../../shared/domain/errors';
 import { lineTotal, marginPct, round2 } from '../../shared/domain/money';
 import type { PricedVariant } from '../catalog/catalog.facade';
 
@@ -36,7 +37,7 @@ export function priceLines(inputs: LineInput[], catalog: Map<string, PricedVaria
   const lines = inputs.map((input) => {
     const v = catalog.get(input.variantId)!;
     const unitPrice = input.unitPrice ?? v.listPrice;
-    if (unitPrice == null) throw new Error(`${v.name} no tiene precio en la lista del cliente; indicá un precio`);
+    if (unitPrice == null) throw new BusinessRuleError(`${v.name} no tiene precio en la lista del cliente; indicá un precio`);
     const total = lineTotal(input.quantity, unitPrice, input.discountPct);
     const effectivePrice = total / input.quantity;
     const margin = marginPct(effectivePrice, v.cost);

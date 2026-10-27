@@ -7,7 +7,7 @@ import { useMe } from '@/lib/hooks';
 export function Topbar({ onCopilot }: { onCopilot: () => void }) {
   const { data: me } = useMe();
   return (
-    <header className="flex h-14 items-center gap-3 border-b bg-card px-4">
+    <header className="flex h-14 items-center gap-3 border-b bg-card px-4 print:hidden">
       <button
         onClick={onCopilot}
         className="flex h-9 flex-1 items-center gap-2 rounded-md border bg-background px-3 text-left text-sm text-muted-foreground md:max-w-md"

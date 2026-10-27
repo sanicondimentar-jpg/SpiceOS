@@ -21,11 +21,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden print:block print:h-auto">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onCopilot={() => setCopilot(true)} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 print:overflow-visible print:p-0">{children}</main>
       </div>
       <CopilotPanel open={copilot} onClose={() => setCopilot(false)} />
     </div>

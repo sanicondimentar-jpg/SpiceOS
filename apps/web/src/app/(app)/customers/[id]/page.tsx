@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { use } from 'react';
 import { MessageCircle, Phone, ShoppingCart } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -31,7 +32,9 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
         <div className="ml-auto flex gap-2">
           <Button variant="outline" size="sm"><Phone className="h-4 w-4" /> Llamar</Button>
           <Button variant="outline" size="sm"><MessageCircle className="h-4 w-4" /> WhatsApp</Button>
-          <Button size="sm"><ShoppingCart className="h-4 w-4" /> Nuevo pedido</Button>
+          <Button asChild size="sm">
+            <Link href={`/orders/new?customerId=${c.id}&customerName=${encodeURIComponent(c.tradeName ?? c.legalName)}`}><ShoppingCart className="h-4 w-4" /> Nuevo pedido</Link>
+          </Button>
         </div>
       </div>
 

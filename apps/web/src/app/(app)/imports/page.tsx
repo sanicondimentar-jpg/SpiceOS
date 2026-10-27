@@ -24,6 +24,11 @@ const KINDS: Record<ImportKind, { title: string; help: string; back: string }> =
     help: 'Una fila por presentación; las filas con el mismo código de producto se agrupan. "Precio" carga la lista por defecto y "Precio <lista>" (por ejemplo "Precio Gastronomía") carga esa lista.',
     back: '/products',
   },
+  stock: {
+    title: 'Stock inicial',
+    help: 'Una fila por saldo contado: SKU, cantidad y, si corresponde, lote y vencimiento. Si hay un solo depósito la columna "Depósito" es opcional. Si ese saldo ya tiene stock, se saltea o se lleva a la cantidad de la planilla según elijas.',
+    back: '/inventory',
+  },
 };
 
 export default function ImportsPage() {
@@ -35,15 +40,15 @@ export default function ImportsPage() {
 }
 
 function Importer() {
-  const initial = useSearchParams().get('kind') === 'products' ? 'products' : 'customers';
+  const kindParam = useSearchParams().get('kind');
+  const initial: ImportKind = kindParam === 'products' || kindParam === 'stock' ? kindParam : 'customers';
   const [kind, setKind] = useState<ImportKind>(initial);
   const [file, setFile] = useState<File | null>(null);
   const [onDuplicate, setOnDuplicate] = useState<'skip' | 'update'>('skip');
   const [review, setReview] = useState<ImportResult | null>(null);
   const [done, setDone] = useState<ImportResult | null>(null);
-  const customers = useImport('customers');
-  const products = useImport('products');
-  const run = kind === 'customers' ? customers : products;
+  const imports = { customers: useImport('customers'), products: useImport('products'), stock: useImport('stock') };
+  const run = imports[kind];
 
   const reset = (next?: Partial<{ kind: ImportKind; file: File | null; onDuplicate: 'skip' | 'update' }>) => {
     if (next?.kind) setKind(next.kind);
@@ -85,7 +90,7 @@ function Importer() {
             ))}
           </div>
           <p className="text-sm text-muted-foreground">{KINDS[kind].help}</p>
-          <Button variant="outline" size="sm" onClick={() => download(`/imports/templates/${kind}`, `plantilla-${kind === 'customers' ? 'clientes' : 'productos'}.xlsx`)}>
+          <Button variant="outline" size="sm" onClick={() => download(`/imports/templates/${kind}`, `plantilla-${{ customers: 'clientes', products: 'productos', stock: 'stock' }[kind]}.xlsx`)}>
             <Download className="h-4 w-4" /> Descargar plantilla
           </Button>
           <div className="grid gap-4 sm:grid-cols-[1fr_220px_auto] sm:items-end">

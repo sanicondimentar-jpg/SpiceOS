@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
+import { NotFoundError } from '../../shared/domain/errors';
 import type { Tx } from '../../shared/prisma/prisma.service';
 import { CUSTOMER_REPOSITORY, CustomerRepository } from './domain/customer.repository';
 import { phoneVariants } from './domain/customer';
@@ -21,7 +22,7 @@ export class CrmFacade {
 
   async assertCanOrder(tx: Tx, customerId: string): Promise<{ priceListId: string | null; paymentTermsDays: number }> {
     const customer = await this.customers.findById(tx, customerId);
-    if (!customer) throw new Error(`Cliente ${customerId} no existe`);
+    if (!customer) throw new NotFoundError('Cliente', customerId);
     customer.assertCanOrder();
     const s = customer.snapshot();
     return { priceListId: s.priceListId ?? null, paymentTermsDays: s.paymentTermsDays };
