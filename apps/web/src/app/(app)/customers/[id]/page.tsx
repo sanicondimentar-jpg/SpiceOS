@@ -7,12 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { date, money, number } from '@/lib/utils';
-import { useCustomer360 } from '@/lib/hooks';
+import { useCustomer360, useMe } from '@/lib/hooks';
+import { ContactsCard } from '@/components/crm/contacts-card';
 
 /** Customer 360: todo lo que la empresa sabe de un cliente, en una pantalla. */
 export default function Customer360Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data, isLoading } = useCustomer360(id);
+  const { data: me } = useMe();
   if (isLoading || !data) return <Skeleton className="mx-auto h-96 max-w-7xl" />;
   const { customer: c, kpis } = data;
   const risk = c.account?.riskAssessments?.[0];
@@ -57,6 +59,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
         </Card>
 
         <div className="space-y-4">
+          <ContactsCard customerId={id} canWrite={!!me?.permissions.includes('crm.customer.write')} />
           <Card>
             <CardHeader><CardTitle>Riesgo financiero</CardTitle></CardHeader>
             <CardContent className="text-sm">

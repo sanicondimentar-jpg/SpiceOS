@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -25,13 +25,14 @@ export default function CustomersPage() {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Clientes</h1>
         <span className="text-sm text-muted-foreground">{data?.total ?? '…'} en total</span>
-        <Button className="ml-auto" size="sm">
-          <Plus className="h-4 w-4" /> Nuevo cliente
-        </Button>
+        <div className="ml-auto flex gap-2">
+          <Button asChild variant="outline" size="sm"><Link href="/imports?kind=customers"><Upload className="h-4 w-4" /> Importar</Link></Button>
+          <Button asChild size="sm"><Link href="/customers/new"><Plus className="h-4 w-4" /> Nuevo cliente</Link></Button>
+        </div>
       </div>
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input className="pl-9" placeholder="Buscar por nombre, CUIT o código" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+        <Input className="pl-9" placeholder="Buscar por nombre, CUIT o código" aria-label="Buscar clientes" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
       </div>
       <Card className="overflow-x-auto">
         <table className="w-full text-sm">

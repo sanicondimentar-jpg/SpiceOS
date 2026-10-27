@@ -18,6 +18,7 @@ export const EVENT_TYPES = [
   'customer.updated',
   'customer.risk_changed',
   'customer.inactive_detected',
+  'contact.created',
   'lead.created',
   'opportunity.created',
   'opportunity.stage_changed',
@@ -31,6 +32,11 @@ export const EVENT_TYPES = [
   'order.dispatched',
   'order.delivered',
   'order.cancelled',
+  'product.created',
+  'product.updated',
+  'product.cost_changed',
+  'price_list.updated',
+  'certification.expiring',
   'stock.below_minimum',
   'lot.expiring',
   'purchase_order.received',
@@ -47,6 +53,22 @@ export const EVENT_TYPES = [
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
+
+export interface ProductCostChangedPayload {
+  productId: string;
+  variantId: string;
+  sku: string;
+  previousCost: number;
+  cost: number;
+  changePct: number | null;
+  source: string;
+}
+
+export interface PriceListUpdatedPayload {
+  priceListId: string;
+  variantIds: string[];
+  reason: 'manual' | 'reprice' | 'import';
+}
 
 export interface MessageReceivedPayload {
   conversationId: string;

@@ -10,13 +10,15 @@ import {
 import { CUSTOMER_REPOSITORY } from './domain/customer.repository';
 import { PrismaCustomerRepository } from './infrastructure/prisma-customer.repository';
 import { CustomersController } from './interface/http/customers.controller';
+import { ContactsController } from './interface/http/contacts.controller';
+import { ContactsService } from './application/contacts.service';
 import { CrmAiTools } from './interface/ai-tools/crm.tools';
 import { CrmFacade } from './crm.facade';
 import { CrmConsumer } from './interface/crm.consumer';
 
 @Module({
   imports: [CqrsModule],
-  controllers: [CustomersController],
+  controllers: [CustomersController, ContactsController],
   providers: [
     { provide: CUSTOMER_REPOSITORY, useClass: PrismaCustomerRepository },
     CreateCustomerHandler,
@@ -27,7 +29,8 @@ import { CrmConsumer } from './interface/crm.consumer';
     CrmAiTools,
     CrmFacade,
     CrmConsumer,
+    ContactsService,
   ],
-  exports: [CrmFacade],
+  exports: [CrmFacade, ContactsService],
 })
 export class CrmModule {}
