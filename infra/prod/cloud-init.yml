@@ -1,5 +1,5 @@
 #cloud-config
-# Se pega en "Cloud config" al crear el servidor (Ubuntu 24.04). Instala Docker,
+# Se pega en "Cloud config" / "User data" al crear el servidor (Ubuntu 24.04). Instala Docker,
 # deja abiertos solo SSH, HTTP y HTTPS, agrega 2 GB de swap y activa las actualizaciones de seguridad.
 package_update: true
 package_upgrade: true

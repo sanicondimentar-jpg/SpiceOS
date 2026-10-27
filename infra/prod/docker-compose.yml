@@ -1,4 +1,4 @@
-# Producción en un solo servidor (4 vCPU / 8 GB). Solo Caddy publica puertos (80/443);
+# Producción en un solo servidor (desde 2 vCPU / 4 GB). Solo Caddy publica puertos (80/443);
 # el resto de los servicios queda en la red interna de Docker.
 # Lo maneja deploy.sh, que define IMAGE_PREFIX e IMAGE_TAG y genera .env la primera vez.
 name: spiceos

@@ -12,7 +12,7 @@ Postgres, Redis, RabbitMQ, Qdrant y MinIO no publican puertos. La base se copia 
 1. **Clave de despliegue.** En tu computadora:
    `ssh-keygen -t ed25519 -f spiceos-deploy -N "" -C spiceos-deploy`
    Genera `spiceos-deploy` (privada) y `spiceos-deploy.pub` (pública).
-2. **Servidor.** Ubuntu 24.04, 4 vCPU / 8 GB (Hetzner CPX31 o equivalente). Al crearlo:
+2. **Servidor.** Ubuntu 24.04, mínimo 2 vCPU / 4 GB (por ejemplo DigitalOcean Basic de 4 GB); se agranda cuando haga falta. Al crearlo:
    cargar `spiceos-deploy.pub` como clave SSH, pegar el contenido de `cloud-init.yml` en *Cloud config* y activar los backups del proveedor.
 3. **DNS.** Dos registros `A` hacia la IP del servidor: `APP_DOMAIN` y `AUTH_DOMAIN` (por ejemplo `sistema.saboracasa.com.ar` y `auth.saboracasa.com.ar`).
 4. **GitHub → Settings → Secrets and variables → Actions.**
