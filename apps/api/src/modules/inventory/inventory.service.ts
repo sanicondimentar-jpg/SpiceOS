@@ -8,6 +8,7 @@ import { RequestContextStore } from '../../shared/tenancy/request-context';
 import { UnitOfWork, UowScope } from '../../shared/unit-of-work';
 import { ProductsService } from '../catalog/application/products.service';
 import { allocateFefo } from './fefo';
+import { lotCodeFor } from './lot-code';
 import { InventoryFacade } from './inventory.facade';
 
 @Injectable()
@@ -100,7 +101,9 @@ export class InventoryService {
       const received: { sku: string; quantity: number; lot: string | null }[] = [];
       for (const line of input.lines) {
         const v = variants.get(line.variantId)!;
-        const lot = line.lotCode ? await this.ledger.lot(tx, line.variantId, line.lotCode, line.expiresAt ? new Date(line.expiresAt) : null) : null;
+        const expiresAt = line.expiresAt ? new Date(line.expiresAt) : null;
+        const lotCode = lotCodeFor(line.lotCode, expiresAt);
+        const lot = lotCode ? await this.ledger.lot(tx, line.variantId, lotCode, expiresAt) : null;
         await this.ledger.post(tx, {
           warehouseId: input.warehouseId,
           variantId: line.variantId,

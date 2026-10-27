@@ -26,7 +26,7 @@ const KINDS: Record<ImportKind, { title: string; help: string; back: string }> =
   },
   stock: {
     title: 'Stock inicial',
-    help: 'La plantilla trae una fila por presentación: completá cantidad, lote y vencimiento (una fila por lote). Las filas sin cantidad no se cargan. Si hay un solo depósito la columna "Depósito" es opcional. Si ese saldo ya tiene stock, se saltea o se lleva a la cantidad de la planilla según elijas.',
+    help: 'La plantilla trae una fila por presentación: completá cantidad y vencimiento, y el lote si lo tenés (si no, se arma con el vencimiento). Una fila por lote o vencimiento. Las filas sin cantidad no se cargan. Si hay un solo depósito la columna "Depósito" es opcional. Si ese saldo ya tiene stock, se saltea o se lleva a la cantidad de la planilla según elijas.',
     back: '/inventory',
   },
 };

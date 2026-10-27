@@ -8,11 +8,15 @@ describe('mapStockRow', () => {
     expect(r.expiresAt?.toISOString().slice(0, 10)).toBe('2027-03-31');
   });
 
-  it('marca cantidad negativa, fecha inválida y vencimiento sin lote', () => {
+  it('marca cantidad negativa y fecha inválida', () => {
     const r = mapStockRow({ row: 3, values: { sku: 'X', quantity: '-2', expiresAt: '31/02/2027' } });
     expect(r.errors.map((e) => e.field).sort()).toEqual(['expiresAt', 'quantity']);
-    const s = mapStockRow({ row: 4, values: { sku: 'X', quantity: '1', expiresAt: '2027-01-01' } });
-    expect(s.errors.map((e) => e.field)).toEqual(['lot']);
+  });
+
+  it('sin número de lote, arma el lote con el vencimiento', () => {
+    const r = mapStockRow({ row: 4, values: { sku: 'X', quantity: '1', expiresAt: '01/12/2027' } });
+    expect(r.errors).toEqual([]);
+    expect(r.lot).toBe('V2027-12-01');
   });
 });
 

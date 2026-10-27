@@ -51,7 +51,6 @@ export default function ReceivePage() {
       const unitCost = optNumber(l.unitCost);
       if (quantity === undefined || Number.isNaN(quantity) || quantity <= 0) return setError(`Cantidad inválida en ${l.sku}`);
       if (unitCost !== undefined && (Number.isNaN(unitCost) || unitCost < 0)) return setError(`Costo inválido en ${l.sku}`);
-      if (l.expiresAt && !l.lotCode.trim()) return setError(`Falta el lote de ${l.sku} (tiene vencimiento)`);
       out.push({ variantId: l.variantId, quantity, lotCode: optText(l.lotCode), expiresAt: optText(l.expiresAt), unitCost });
     }
     receive.mutate(
@@ -113,7 +112,7 @@ export default function ReceivePage() {
                   <Input aria-label={`Cantidad de ${l.sku}`} className="ml-auto h-8 w-24 text-right" inputMode="decimal" value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value })} />
                 </td>
                 <td className="px-4 py-2">
-                  <Input aria-label={`Lote de ${l.sku}`} className="h-8 w-36" value={l.lotCode} onChange={(e) => update(i, { lotCode: e.target.value })} />
+                  <Input aria-label={`Lote de ${l.sku}`} className="h-8 w-36" placeholder="opcional" value={l.lotCode} onChange={(e) => update(i, { lotCode: e.target.value })} />
                 </td>
                 <td className="px-4 py-2">
                   <Input aria-label={`Vencimiento de ${l.sku}`} className="h-8 w-40" type="date" value={l.expiresAt} onChange={(e) => update(i, { expiresAt: e.target.value })} />
