@@ -129,11 +129,44 @@ function validCuit(d: string): boolean {
   return check === Number(d[10]);
 }
 
-/** Normaliza a E.164 asumiendo Argentina cuando falta el código de país. */
+/**
+ * Normaliza a E.164 asumiendo Argentina cuando falta el código de país.
+ * Celulares argentinos: se quita el "15" local y se agrega el 9 que usa WhatsApp
+ * ("011 15-4444-5555" → +5491144445555). Números con "+" o "00" conservan su país.
+ */
 export function normalizePhone(phone?: string | null): string | null {
   if (!phone) return null;
-  let digits = phone.replace(/\D/g, '');
-  if (digits.startsWith('0')) digits = digits.slice(1);
-  if (!digits.startsWith('54')) digits = `54${digits}`;
-  return `+${digits}`;
+  const trimmed = phone.trim();
+  let digits = trimmed.replace(/\D/g, '');
+  if (!digits) return null;
+  if (trimmed.startsWith('+') || digits.startsWith('00')) {
+    digits = digits.replace(/^00/, '');
+    if (!digits.startsWith('54')) return `+${digits}`;
+  } else if (digits.startsWith('0')) {
+    digits = digits.slice(1);
+  }
+  let national = digits.startsWith('54') && digits.length >= 12 ? digits.slice(2) : digits;
+  if (national.startsWith('9') && national.length === 11) return `+54${national}`;
+  if (national.length === 12) {
+    // Área de 2, 3 o 4 dígitos seguida de "15": es un celular.
+    for (const areaLen of [2, 3, 4]) {
+      if (national.slice(areaLen, areaLen + 2) === '15') {
+        national = `9${national.slice(0, areaLen)}${national.slice(areaLen + 2)}`;
+        return `+54${national}`;
+      }
+    }
+  }
+  return `+54${national}`;
+}
+
+/**
+ * Formas en que puede estar guardado el mismo número argentino: con y sin el 9 de celular.
+ * Un fijo cargado sin 9 tiene que coincidir con el WhatsApp entrante, que siempre trae el 9.
+ */
+export function phoneVariants(phone?: string | null): string[] {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return [];
+  if (normalized.startsWith('+549')) return [normalized, `+54${normalized.slice(4)}`];
+  if (normalized.startsWith('+54')) return [normalized, `+549${normalized.slice(3)}`];
+  return [normalized];
 }

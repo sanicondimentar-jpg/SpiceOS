@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  BarChart3, Boxes, FileText, LayoutDashboard, MessageCircle, Package, Settings, ShoppingCart, Truck, Users, Wallet, Workflow, Target,
+  BarChart3, Boxes, FileText, Tags, Upload, LayoutDashboard, MessageCircle, Package, Settings, ShoppingCart, Truck, Users, Wallet, Workflow, Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMe } from '@/lib/hooks';
@@ -15,12 +15,14 @@ const NAV = [
   { href: '/sales', label: 'Ventas', icon: Target, perm: 'sales.opportunity.read' },
   { href: '/orders', label: 'Pedidos', icon: ShoppingCart, perm: 'orders.order.read' },
   { href: '/products', label: 'Productos', icon: Package, perm: 'catalog.product.read' },
+  { href: '/price-lists', label: 'Listas de precios', icon: Tags, perm: 'catalog.product.read' },
   { href: '/inventory', label: 'Inventario', icon: Boxes, perm: 'inventory.stock.read' },
   { href: '/logistics', label: 'Logística', icon: Truck, perm: 'orders.order.read' },
   { href: '/receivables', label: 'Cobranza', icon: Wallet, perm: 'receivables.account.read' },
   { href: '/documents', label: 'Documentos', icon: FileText, perm: 'documents.document.read' },
   { href: '/automation', label: 'Automatizaciones', icon: Workflow, perm: 'automation.rule.read' },
   { href: '/analytics', label: 'Inteligencia', icon: BarChart3, perm: 'analytics.executive.read' },
+  { href: '/imports', label: 'Importar', icon: Upload, perm: 'crm.customer.write' },
   { href: '/settings', label: 'Configuración', icon: Settings, perm: 'core.settings.manage' },
 ];
 

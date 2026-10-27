@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { AggregateRoot } from './domain/aggregate-root';
+import type { DomainEvent } from './domain/domain-event';
 import { AuditEntry, AuditService } from './audit/audit.service';
 import { OutboxService } from './outbox/outbox.service';
 import { PrismaService, Tx } from './prisma/prisma.service';
@@ -21,7 +22,7 @@ export class UnitOfWork {
       const scope = new UowScope();
       const result = await fn(tx, scope);
       for (const entry of scope.audits) await this.audit.record(tx, entry);
-      await this.outbox.add(tx, scope.aggregates.flatMap((a) => a.pullEvents()));
+      await this.outbox.add(tx, [...scope.aggregates.flatMap((a) => a.pullEvents()), ...scope.events]);
       return result;
     });
   }
@@ -34,9 +35,15 @@ export class UnitOfWork {
 export class UowScope {
   readonly audits: AuditEntry[] = [];
   readonly aggregates: AggregateRoot[] = [];
+  readonly events: DomainEvent[] = [];
 
   track(aggregate: AggregateRoot): void {
     this.aggregates.push(aggregate);
+  }
+
+  /** Para casos de uso sin agregado propio (catálogo, listas de precios). */
+  emit(event: DomainEvent): void {
+    this.events.push(event);
   }
 
   auditLog(entry: AuditEntry): void {

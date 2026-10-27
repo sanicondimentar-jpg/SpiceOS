@@ -22,6 +22,7 @@ import { CopilotModule } from './modules/copilot/copilot.module';
 import { AutomationModule } from './modules/automation/automation.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { ImportsModule } from './modules/imports/imports.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     AutomationModule,
     TasksModule,
     AnalyticsModule,
+    ImportsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -3,10 +3,16 @@ import { z } from 'zod';
 import { PERMISSIONS } from '@spiceos/contracts';
 import { AiTool } from '../../shared/ai/ai-tool.decorator';
 import { UnitOfWork } from '../../shared/unit-of-work';
+import { PriceListsService } from './application/price-lists.service';
+import { CertificationsService } from './application/certifications.service';
 
 @Injectable()
 export class CatalogAiTools {
-  constructor(private readonly uow: UnitOfWork) {}
+  constructor(
+    private readonly uow: UnitOfWork,
+    private readonly priceLists: PriceListsService,
+    private readonly certifications: CertificationsService,
+  ) {}
 
   @AiTool({
     name: 'catalog_search_products',
@@ -58,5 +64,63 @@ export class CatalogAiTools {
       const key = orderBy as 'margin' | 'margin_pct' | 'revenue';
       return rows.sort((a, b) => (b[key] ?? 0) - (a[key] ?? 0)).slice(0, limit);
     });
+  }
+
+  @AiTool({
+    name: 'catalog_margin_alerts',
+    description:
+      'Precios de una lista de precios que quedan por debajo del margen mínimo de su presentación (por ejemplo después de un aumento de costo). Sin priceListId usa la lista por defecto.',
+    input: z.object({ priceListId: z.string().uuid().optional() }),
+    permissions: [PERMISSIONS.catalog.costRead],
+    agents: ['pricing', 'executive'],
+  })
+  async marginAlerts({ priceListId }: { priceListId?: string }) {
+    const id = priceListId ?? (await this.uow.read((tx) => tx.priceList.findFirst({ where: { isDefault: true }, select: { id: true } })))?.id;
+    if (!id) return { message: 'No hay lista de precios por defecto' };
+    const list = await this.priceLists.items(id);
+    return { priceList: list.name, alerts: list.items.filter((i) => 'belowMinMargin' in i && i.belowMinMargin) };
+  }
+
+  @AiTool({
+    name: 'catalog_reprice_preview',
+    description:
+      'Simula recalcular los precios de una lista como costo × factor (ej. 1.55 = costo + 55 %), redondeando hacia arriba. No guarda nada: devuelve precio actual, nuevo, variación y margen por presentación.',
+    input: z.object({
+      priceListId: z.string().uuid(),
+      factor: z.number().min(1).max(20),
+      roundTo: z.number().positive().default(10),
+    }),
+    permissions: [PERMISSIONS.catalog.costRead],
+    agents: ['pricing'],
+  })
+  repricePreview(input: { priceListId: string; factor: number; roundTo: number }) {
+    return this.priceLists.reprice(input.priceListId, { ...input, dryRun: true });
+  }
+
+  @AiTool({
+    name: 'catalog_reprice_apply',
+    description: 'Aplica a una lista de precios el recálculo costo × factor. Mostrale antes al usuario la vista previa (catalog_reprice_preview).',
+    input: z.object({
+      priceListId: z.string().uuid(),
+      factor: z.number().min(1).max(20),
+      roundTo: z.number().positive().default(10),
+    }),
+    permissions: [PERMISSIONS.catalog.write, PERMISSIONS.catalog.costRead],
+    agents: ['pricing'],
+    requiresConfirmation: true,
+  })
+  repriceApply(input: { priceListId: string; factor: number; roundTo: number }) {
+    return this.priceLists.reprice(input.priceListId, { ...input, dryRun: false });
+  }
+
+  @AiTool({
+    name: 'catalog_expiring_certifications',
+    description: 'Certificados de producto (Sin TACC, Kosher, etc.) vencidos o que vencen en los próximos N días.',
+    input: z.object({ days: z.number().int().min(0).max(365).default(60) }),
+    permissions: [PERMISSIONS.catalog.read],
+    agents: ['documents', 'executive', 'commercial'],
+  })
+  expiringCertifications({ days }: { days: number }) {
+    return this.certifications.expiring(days);
   }
 }

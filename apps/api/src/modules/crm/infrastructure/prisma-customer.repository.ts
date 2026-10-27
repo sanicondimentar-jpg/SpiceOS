@@ -12,9 +12,9 @@ export class PrismaCustomerRepository implements CustomerRepository {
     return row ? toDomain(row) : null;
   }
 
-  async findByPhone(tx: Tx, phone: string) {
+  async findByPhone(tx: Tx, phones: string[]) {
     const row = await tx.customer.findFirst({
-      where: { deletedAt: null, OR: [{ phone }, { contacts: { some: { phone } } }] },
+      where: { deletedAt: null, OR: [{ phone: { in: phones } }, { contacts: { some: { phone: { in: phones }, deletedAt: null } } }] },
     });
     return row ? toDomain(row) : null;
   }

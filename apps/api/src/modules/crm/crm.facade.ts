@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 import type { Tx } from '../../shared/prisma/prisma.service';
 import { CUSTOMER_REPOSITORY, CustomerRepository } from './domain/customer.repository';
-import { normalizePhone } from './domain/customer';
+import { phoneVariants } from './domain/customer';
 import { CreateCustomerCommand } from './application/commands/create-customer.command';
 
 /** API pública del módulo CRM para otros módulos (WhatsApp, Pedidos). Nadie más toca sus tablas. */
@@ -14,9 +14,9 @@ export class CrmFacade {
   ) {}
 
   async findIdByPhone(tx: Tx, phone: string): Promise<string | null> {
-    const normalized = normalizePhone(phone);
-    if (!normalized) return null;
-    return (await this.customers.findByPhone(tx, normalized))?.id ?? null;
+    const variants = phoneVariants(phone);
+    if (!variants.length) return null;
+    return (await this.customers.findByPhone(tx, variants))?.id ?? null;
   }
 
   async assertCanOrder(tx: Tx, customerId: string): Promise<{ priceListId: string | null; paymentTermsDays: number }> {
