@@ -67,9 +67,8 @@ export class AuthMiddleware implements NestMiddleware {
     const org = token.organization;
     if (!org) return [];
     if (Array.isArray(org)) return org;
-    return Object.values(org)
-      .map((o) => o.id)
-      .filter((id): id is string => Boolean(id));
+    // Se aceptan el alias y el id: según cómo esté configurado el mapper, el claim trae uno u otro.
+    return Object.entries(org).flatMap(([alias, o]) => (o.id ? [alias, o.id] : [alias]));
   }
 
   private async resolve(keycloakId: string, orgId: string): Promise<CachedIdentity['ctx']> {

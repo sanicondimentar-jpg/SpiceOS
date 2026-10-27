@@ -127,7 +127,10 @@ services:
   web:
     <<: *app-env
     profiles: ["app"]
-    build: { context: ../.., dockerfile: infra/docker/web.Dockerfile }
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+      args: { NEXT_PUBLIC_API_URL: "http://localhost:4000/api/v1" }
     ports: ["3000:3000"]
     depends_on: [api]
 

@@ -1,0 +1,67 @@
+name: Deploy
+
+# Despliega en el servidor cada vez que CI termina bien en main (las imágenes ya están en ghcr),
+# o a mano desde la pestaña Actions. No corre hasta que estén cargadas las variables del repo.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      vars.APP_DOMAIN != '' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: { contents: read, packages: read }
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.SHA }}" }
+
+      - name: Clave SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ vars.SSH_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 15 "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Copiar configuración
+        run: |
+          ssh "root@${{ vars.SSH_HOST }}" 'mkdir -p /opt/spiceos/infra/compose /opt/spiceos/infra/keycloak'
+          rsync -a infra/prod/ "root@${{ vars.SSH_HOST }}:/opt/spiceos/infra/prod/" --exclude .env --exclude backups
+          rsync -a infra/compose/postgres-init.sql "root@${{ vars.SSH_HOST }}:/opt/spiceos/infra/compose/"
+          rsync -a infra/keycloak/ "root@${{ vars.SSH_HOST }}:/opt/spiceos/infra/keycloak/"
+
+      # Los secretos viajan por stdin, no en la línea de comandos del servidor.
+      - name: Desplegar
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ env.SHA }}
+          APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+          AUTH_DOMAIN: ${{ vars.AUTH_DOMAIN }}
+          ADMIN_EMAIL: ${{ vars.ADMIN_EMAIL }}
+          COMPANY_CUIT: ${{ vars.COMPANY_CUIT }}
+          ADMIN_INITIAL_PASSWORD: ${{ secrets.ADMIN_INITIAL_PASSWORD }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+        run: |
+          IMAGE_PREFIX="ghcr.io/${GITHUB_REPOSITORY,,}"
+          {
+            printf 'set -e\n'
+            printf 'echo %q | docker login ghcr.io -u %q --password-stdin >/dev/null\n' "$GHCR_TOKEN" "$GITHUB_ACTOR"
+            for v in IMAGE_PREFIX IMAGE_TAG APP_DOMAIN AUTH_DOMAIN ADMIN_EMAIL COMPANY_CUIT ADMIN_INITIAL_PASSWORD ANTHROPIC_API_KEY VOYAGE_API_KEY; do
+              printf 'export %s=%q\n' "$v" "${!v}"
+            done
+            printf '/opt/spiceos/infra/prod/deploy.sh\n'
+          } | ssh "root@${{ vars.SSH_HOST }}" bash -s

@@ -59,3 +59,7 @@ expiringLots({ days }) { … }
 ```
 
 El registro la descubre al arrancar, la filtra por permisos del usuario y la expone al modelo. Las escrituras quedan auditadas como `agent:<nombre>` en nombre del usuario.
+
+## Producción
+
+Ver `infra/prod/README.md`: un servidor con Docker Compose, HTTPS automático y despliegue desde GitHub Actions.

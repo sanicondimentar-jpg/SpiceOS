@@ -66,3 +66,11 @@ jobs:
           file: infra/docker/web.Dockerfile
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: ${{ env.IMAGE_PREFIX }}/web:${{ github.sha }}
+      # Etapa de build de la API (prisma CLI, ts-node): la usa el despliegue para migraciones y datos iniciales.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/api.Dockerfile
+          target: build
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ${{ env.IMAGE_PREFIX }}/api-tools:${{ github.sha }}
