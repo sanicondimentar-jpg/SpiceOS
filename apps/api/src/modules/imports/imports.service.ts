@@ -17,7 +17,7 @@ import { InventoryFacade } from '../inventory/inventory.facade';
 import { CUSTOMER_COLUMNS, CUSTOMER_TEMPLATE_HEADERS, mapCustomerRow, type CustomerRowResult } from './customer-import';
 import { PRODUCT_COLUMNS, PRODUCT_PREFIX_FIELDS, PRODUCT_TEMPLATE_HEADERS, mapProductRow, type ProductRowResult } from './product-import';
 import { normalizeHeader, parseSpreadsheet } from './spreadsheet';
-import { STOCK_COLUMNS, STOCK_TEMPLATE_HEADERS, mapStockRow, type StockRowResult } from './stock-import';
+import { STOCK_COLUMNS, STOCK_TEMPLATE_HEADERS, isBlankStockRow, mapStockRow, type StockRowResult } from './stock-import';
 
 type UploadedFile = { buffer: Buffer; originalname: string };
 const PREVIEW_ROWS = 20;
@@ -257,7 +257,8 @@ export class ImportsService {
    */
   async importStock(file: UploadedFile, options: ImportOptions): Promise<ImportResult> {
     const sheet = await parseSpreadsheet(file, STOCK_COLUMNS);
-    const mapped = sheet.rows.map(mapStockRow);
+    const filled = sheet.rows.filter((r) => !isBlankStockRow(r));
+    const mapped = filled.map(mapStockRow);
 
     const { variants, warehouses, current } = await this.uow.read(async (tx) => {
       const skuList = [...new Set(mapped.flatMap((m) => (m.sku ? [m.sku] : [])))];
@@ -296,7 +297,7 @@ export class ImportsService {
       valid.push({ ...m, variantId: v.id, warehouseId, key, unitCost: m.cost ?? v.cost });
     }
 
-    const result = this.emptyResult(options.dryRun, sheet.rows.length, sheet.unknownColumns);
+    const result = this.emptyResult(options.dryRun, filled.length, sheet.unknownColumns);
     result.valid = valid.length;
     result.errors = mapped.flatMap((m) => m.errors);
     result.preview = valid.slice(0, PREVIEW_ROWS).map((m) => ({
@@ -359,11 +360,29 @@ export class ImportsService {
     if (kind === 'customers') {
       sheet.addRow(['Ejemplo SRL', 'El Ejemplo', '30-71234567-1', 'RI', 'Restaurante', '011 15-4444-5555', 'compras@ejemplo.com', 30, 500000, 'Mayorista', '', 'Juana Pérez', 'Compras', 'gastronomía']);
     } else if (kind === 'stock') {
-      sheet.addRow(['PIM-AHU-1KG', 40, 'DEP-01', 'L2410-07', '31/10/2027', 12000]);
+      await this.fillStockTemplate(sheet);
     } else {
       sheet.addRow(['PIM-AHU', 'Pimentón ahumado', '1 kg', 'PIM-AHU-1KG', 1, 'UN', '', 12000, 18600, 25, 'Especias', 'España', 540]);
     }
     return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
+  /** Una fila por presentación activa, para completar cantidad, lote y vencimiento. */
+  private async fillStockTemplate(sheet: ExcelJS.Worksheet) {
+    const variants = await this.uow.read((tx) =>
+      tx.productVariant.findMany({
+        where: { isActive: true, product: { isActive: true } },
+        select: { sku: true, name: true, product: { select: { name: true } } },
+        orderBy: [{ product: { name: 'asc' } }, { sku: 'asc' }],
+      }),
+    );
+    if (!variants.length) sheet.addRow(['PIM-AHU-1KG', 'Pimentón ahumado', '1 kg', 40, 'L2410-07', '31/10/2027', 'DEP-01']);
+    for (const v of variants) sheet.addRow([v.sku, v.product.name, v.name]);
+    sheet.getColumn(1).numFmt = '@';
+    sheet.getColumn(2).width = 34;
+    sheet.getColumn(3).width = 30;
+    sheet.getColumn(6).numFmt = 'dd/mm/yyyy';
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
   }
 
   private emptyResult(dryRun: boolean, totalRows: number, unknownColumns: string[]): ImportResult {

@@ -26,7 +26,7 @@ const KINDS: Record<ImportKind, { title: string; help: string; back: string }> =
   },
   stock: {
     title: 'Stock inicial',
-    help: 'Una fila por saldo contado: SKU, cantidad y, si corresponde, lote y vencimiento. Si hay un solo depósito la columna "Depósito" es opcional. Si ese saldo ya tiene stock, se saltea o se lleva a la cantidad de la planilla según elijas.',
+    help: 'La plantilla trae una fila por presentación: completá cantidad, lote y vencimiento (una fila por lote). Las filas sin cantidad no se cargan. Si hay un solo depósito la columna "Depósito" es opcional. Si ese saldo ya tiene stock, se saltea o se lleva a la cantidad de la planilla según elijas.',
     back: '/inventory',
   },
 };

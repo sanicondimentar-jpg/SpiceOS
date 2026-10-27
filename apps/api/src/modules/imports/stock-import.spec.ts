@@ -1,4 +1,4 @@
-import { mapStockRow, parseDate } from './stock-import';
+import { isBlankStockRow, mapStockRow, parseDate } from './stock-import';
 
 describe('mapStockRow', () => {
   it('lee SKU, cantidad, lote y vencimiento en formato argentino', () => {
@@ -22,5 +22,13 @@ describe('parseDate', () => {
     expect(parseDate('5-4-27')?.toISOString().slice(0, 10)).toBe('2027-04-05');
     expect(parseDate('31/04/2027')).toBeNull();
     expect(parseDate('mañana')).toBeNull();
+  });
+});
+
+describe('isBlankStockRow', () => {
+  it('ignora las filas precargadas que no se completaron', () => {
+    expect(isBlankStockRow({ row: 2, values: { sku: '52', label: 'Bolsa 1 kg' } })).toBe(true);
+    expect(isBlankStockRow({ row: 3, values: { sku: '52', quantity: '0' } })).toBe(false);
+    expect(isBlankStockRow({ row: 4, values: { sku: '52', lot: 'L1' } })).toBe(false);
   });
 });

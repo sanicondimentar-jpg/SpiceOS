@@ -38,6 +38,9 @@ export interface OrderRow {
   customer: string;
   channel: string;
   total: number;
+  withInvoice: boolean;
+  taxTotal: number;
+  grandTotal: number;
   lines: number;
   requestedDate: string | null;
   createdAt: string;
@@ -59,6 +62,9 @@ export interface OrderDetail {
   subtotal: number;
   discountTotal: number;
   total: number;
+  withInvoice: boolean;
+  taxTotal: number;
+  grandTotal: number;
   marginTotal?: number;
   createdAt: string;
   confirmedAt: string | null;
@@ -95,6 +101,9 @@ export interface OrderPreview {
   subtotal: number;
   discountTotal: number;
   total: number;
+  withInvoice: boolean;
+  taxTotal: number;
+  grandTotal: number;
   marginTotal?: number;
   warnings: string[];
 }

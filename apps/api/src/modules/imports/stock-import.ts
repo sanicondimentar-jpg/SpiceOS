@@ -8,9 +8,16 @@ export const STOCK_COLUMNS: Record<string, string[]> = {
   lot: ['lote', 'nro lote', 'número de lote', 'numero de lote'],
   expiresAt: ['vencimiento', 'vence', 'fecha de vencimiento', 'fecha vencimiento'],
   cost: ['costo', 'costo unitario'],
+  // Columnas de referencia de la planilla precargada: se leen pero no se usan.
+  label: ['producto', 'presentación', 'presentacion', 'descripción', 'descripcion'],
 };
 
-export const STOCK_TEMPLATE_HEADERS = ['SKU', 'Cantidad', 'Depósito', 'Lote', 'Vencimiento', 'Costo'];
+export const STOCK_TEMPLATE_HEADERS = ['SKU', 'Producto', 'Presentación', 'Cantidad', 'Lote', 'Vencimiento', 'Depósito'];
+
+/** En la planilla precargada, las presentaciones sin stock quedan con la cantidad vacía: no se importan. */
+export function isBlankStockRow({ values }: SheetRow): boolean {
+  return !values.quantity && !values.lot && !values.expiresAt && !values.cost;
+}
 
 export interface StockRowResult {
   row: number;
