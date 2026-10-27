@@ -10,7 +10,7 @@ export const variantSchema = z.object({
   name: z.string().min(1).max(80), // "1 kg", "Bolsa 25 kg"
   gtin: z.string().regex(/^\d{8,14}$/, 'GTIN/EAN inválido').optional(),
   unit: z.enum(['UN', 'KG']).default('UN'),
-  netWeightKg: z.number().positive().max(10_000),
+  netWeightKg: z.number().positive().max(10_000).nullish(), // vacío en productos que se venden por unidad
   cost: money.default(0),
   minMarginPct: pct.default(0),
   minStock: z.number().nonnegative().default(0),

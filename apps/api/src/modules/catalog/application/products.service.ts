@@ -243,7 +243,7 @@ export class ProductsService {
       name: v.name,
       unit: v.unit,
       isActive: v.isActive,
-      netWeightKg: Number(v.netWeightKg),
+      netWeightKg: v.netWeightKg == null ? null : Number(v.netWeightKg),
       minStock: Number(v.minStock),
       reorderPoint: Number(v.reorderPoint),
       minMarginPct: Number(v.minMarginPct),

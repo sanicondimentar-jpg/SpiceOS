@@ -674,7 +674,7 @@ model ProductVariant {
   gtin         String? // EAN-13
   name         String
   unit         String   @default("UN") // UN, KG
-  netWeightKg  Decimal  @map("net_weight_kg") @db.Decimal(12, 3)
+  netWeightKg  Decimal? @map("net_weight_kg") @db.Decimal(12, 3)
   currentCost  Decimal  @default(0) @map("current_cost") @db.Decimal(18, 4)
   minMarginPct Decimal  @default(0) @map("min_margin_pct") @db.Decimal(5, 2)
   minStock     Decimal  @default(0) @map("min_stock") @db.Decimal(18, 3)

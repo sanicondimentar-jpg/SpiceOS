@@ -228,7 +228,7 @@ export class ImportsService {
         variantId = existing.id;
         await tx.productVariant.update({
           where: { id: variantId },
-          data: { name: v.name, netWeightKg: v.netWeightKg, unit: v.unit, ...(v.gtin && { gtin: v.gtin }), ...(v.minMarginPct && { minMarginPct: v.minMarginPct }) },
+          data: { name: v.name, netWeightKg: v.netWeightKg ?? null, unit: v.unit, ...(v.gtin && { gtin: v.gtin }), ...(v.minMarginPct && { minMarginPct: v.minMarginPct }) },
         });
         if (v.cost > 0) await this.products.applyCost(tx, scope, variantId, v.cost, 'import');
       } else {

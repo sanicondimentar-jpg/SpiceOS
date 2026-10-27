@@ -61,9 +61,10 @@ export function mapProductRow({ row, values }: SheetRow, extraColumns: Record<st
   if (!values.sku) err('sku', 'Falta el SKU de la presentación');
 
   // Si no viene el peso, se intenta leer de la presentación: "500 g", "1 kg", "Bolsa 25 kg".
+  // Puede quedar vacío: hay productos que se venden por unidad (frascos, cápsulas).
   let netWeightKg = num('netWeightKg', { min: 0 });
   if (netWeightKg === undefined && values.variantName) netWeightKg = weightFromName(values.variantName) ?? undefined;
-  if (netWeightKg === undefined && !errors.some((e) => e.field === 'netWeightKg')) err('netWeightKg', 'Falta el peso en kg');
+  if (!values.variantName && netWeightKg === undefined) err('variantName', 'Falta la presentación');
 
   const unitRaw = values.unit?.toUpperCase();
   const unit = !unitRaw ? 'UN' : ['KG', 'KILO', 'KILOS'].includes(unitRaw) ? 'KG' : ['UN', 'UNIDAD', 'U'].includes(unitRaw) ? 'UN' : null;
@@ -85,7 +86,7 @@ export function mapProductRow({ row, values }: SheetRow, extraColumns: Record<st
   if (!errors.length) {
     const parsed = variantSchema.safeParse({
       sku: values.sku!.toUpperCase(),
-      name: values.variantName ?? `${netWeightKg} kg`,
+      name: values.variantName ?? `${netWeightKg} kg`, // sin presentación siempre hay peso
       gtin: values.gtin,
       unit,
       netWeightKg,

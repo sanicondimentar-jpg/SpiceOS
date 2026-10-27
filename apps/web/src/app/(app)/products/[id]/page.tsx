@@ -51,7 +51,7 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
               <tr key={v.id} className="border-b align-top last:border-0">
                 <td className="px-4 py-3">{v.name}{!v.isActive && <Badge className="ml-2">inactiva</Badge>}</td>
                 <td className="px-4 py-3 font-mono text-xs">{v.sku}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{number(v.netWeightKg)} kg</td>
+                <td className="px-4 py-3 text-right tabular-nums">{v.netWeightKg == null ? 'por unidad' : `${number(v.netWeightKg)} kg`}</td>
                 {canSeeCost && <td className="px-4 py-3 text-right"><CostCell variant={v} canWrite={canWrite} /></td>}
                 <td className="px-4 py-3">
                   {v.prices?.length ? (

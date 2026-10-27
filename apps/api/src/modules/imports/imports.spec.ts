@@ -90,9 +90,15 @@ describe('mapProductRow', () => {
     expect(r.prices).toEqual([{ list: 'default', price: 4500 }]);
   });
 
-  it('exige código, nombre, SKU y peso', () => {
+  it('exige código, nombre, SKU y presentación', () => {
     const r = mapProductRow({ row: 3, values: { cost: '-5' } }, {});
-    expect(r.errors.map((e) => e.field).sort()).toEqual(['cost', 'netWeightKg', 'productCode', 'productName', 'sku']);
+    expect(r.errors.map((e) => e.field).sort()).toEqual(['cost', 'productCode', 'productName', 'sku', 'variantName']);
+  });
+
+  it('acepta presentaciones por unidad, sin peso', () => {
+    const r = mapProductRow({ row: 4, values: { productCode: 'soja', productName: 'Salsa de soja', sku: '514', variantName: 'Caja 12 frascos × 250 cc' } }, {});
+    expect(r.errors).toEqual([]);
+    expect(r.variant?.netWeightKg).toBeUndefined();
   });
 
   it('lee pesos en kg y gramos', () => {
