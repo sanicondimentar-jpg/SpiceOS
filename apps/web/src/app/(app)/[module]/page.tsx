@@ -5,8 +5,6 @@ import { Card, CardContent } from '@/components/ui/card';
 const ROADMAP: Record<string, { title: string; sprint: string }> = {
   inbox: { title: 'WhatsApp', sprint: 'Sprint 3' },
   sales: { title: 'Ventas y embudo', sprint: 'Sprint 2' },
-  orders: { title: 'Pedidos', sprint: 'Sprint 2' },
-  inventory: { title: 'Inventario', sprint: 'Sprint 2' },
   logistics: { title: 'Logística', sprint: 'Fase 2' },
   receivables: { title: 'Cobranza', sprint: 'Sprint 3' },
   documents: { title: 'Documentos', sprint: 'Sprint 4' },

@@ -32,7 +32,7 @@ export function Sidebar() {
   const { data: me } = useMe();
   const items = NAV.filter((i) => !i.perm || me?.permissions.includes(i.perm));
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex">
+    <aside className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex print:hidden">
       <div className="flex h-14 items-center gap-2 border-b px-4">
         <div className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">S</div>
         <div className="leading-tight">

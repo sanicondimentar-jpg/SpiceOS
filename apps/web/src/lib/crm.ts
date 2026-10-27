@@ -49,7 +49,7 @@ export const useMakePrimary = (customerId: string) =>
 export const useRemoveContact = (customerId: string) =>
   useContactMutation(customerId, (contactId: string) => api(`/crm/customers/${customerId}/contacts/${contactId}`, { method: 'DELETE' }));
 
-export type ImportKind = 'customers' | 'products';
+export type ImportKind = 'customers' | 'products' | 'stock';
 
 export const useImport = (kind: ImportKind) => {
   const qc = useQueryClient();

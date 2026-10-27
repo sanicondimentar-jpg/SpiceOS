@@ -13,15 +13,17 @@ import { slugify } from '../catalog/domain/pricing';
 import { ContactsService } from '../crm/application/contacts.service';
 import { CreateCustomerCommand } from '../crm/application/commands/create-customer.command';
 import { UpdateCustomerCommand } from '../crm/application/commands/update-customer.command';
+import { InventoryFacade } from '../inventory/inventory.facade';
 import { CUSTOMER_COLUMNS, CUSTOMER_TEMPLATE_HEADERS, mapCustomerRow, type CustomerRowResult } from './customer-import';
 import { PRODUCT_COLUMNS, PRODUCT_PREFIX_FIELDS, PRODUCT_TEMPLATE_HEADERS, mapProductRow, type ProductRowResult } from './product-import';
 import { normalizeHeader, parseSpreadsheet } from './spreadsheet';
+import { STOCK_COLUMNS, STOCK_TEMPLATE_HEADERS, mapStockRow, type StockRowResult } from './stock-import';
 
 type UploadedFile = { buffer: Buffer; originalname: string };
 const PREVIEW_ROWS = 20;
 
 /**
- * Importación de clientes y productos desde planillas.
+ * Importación de clientes, productos y stock inicial desde planillas.
  * Con dryRun no se escribe nada y se devuelven los errores fila por fila; sin dryRun se importan las filas válidas.
  */
 @Injectable()
@@ -34,6 +36,7 @@ export class ImportsService {
     private readonly contacts: ContactsService,
     private readonly products: ProductsService,
     private readonly priceLists: PriceListsService,
+    private readonly ledger: InventoryFacade,
   ) {}
 
   // ---------- Clientes ----------
@@ -247,16 +250,116 @@ export class ImportsService {
     );
   }
 
+  // ---------- Stock inicial ----------
+  /**
+   * Cada fila es un saldo contado. Si ese saldo (depósito, presentación, lote) ya tiene stock,
+   * "skip" lo deja como está y "update" lo lleva a la cantidad de la planilla con un ajuste.
+   */
+  async importStock(file: UploadedFile, options: ImportOptions): Promise<ImportResult> {
+    const sheet = await parseSpreadsheet(file, STOCK_COLUMNS);
+    const mapped = sheet.rows.map(mapStockRow);
+
+    const { variants, warehouses, current } = await this.uow.read(async (tx) => {
+      const skuList = [...new Set(mapped.flatMap((m) => (m.sku ? [m.sku] : [])))];
+      const [variantRows, warehouseRows] = await Promise.all([
+        tx.productVariant.findMany({ where: { sku: { in: skuList } }, select: { id: true, sku: true, currentCost: true } }),
+        tx.warehouse.findMany({ where: { isActive: true }, select: { id: true, code: true } }),
+      ]);
+      const items = await tx.stockItem.findMany({
+        where: { variantId: { in: variantRows.map((v) => v.id) }, onHand: { gt: 0 } },
+        select: { warehouseId: true, variantId: true, onHand: true, lot: { select: { code: true } } },
+      });
+      return {
+        variants: new Map(variantRows.map((v) => [v.sku, { id: v.id, cost: Number(v.currentCost) }])),
+        warehouses: new Map(warehouseRows.map((w) => [w.code.toUpperCase(), w.id])),
+        current: new Map(items.map((i) => [`${i.warehouseId}|${i.variantId}|${i.lot?.code ?? ''}`, Number(i.onHand)])),
+      };
+    });
+    const onlyWarehouse = warehouses.size === 1 ? [...warehouses.values()][0] : undefined;
+
+    const seen = new Map<string, number>();
+    const valid: (StockRowResult & { variantId: string; warehouseId: string; key: string; unitCost: number })[] = [];
+    for (const m of mapped) {
+      const v = m.sku ? variants.get(m.sku) : undefined;
+      if (m.sku && !v) m.errors.push({ row: m.row, field: 'sku', message: `No existe la presentación con SKU ${m.sku}` });
+      const warehouseId = m.warehouse ? warehouses.get(m.warehouse) : onlyWarehouse;
+      if (!warehouseId) {
+        m.errors.push({ row: m.row, field: 'warehouse', message: m.warehouse ? `No existe el depósito ${m.warehouse}` : 'Indicá el depósito: hay más de uno' });
+      }
+      if (m.errors.length || !v || !warehouseId) continue;
+      const key = `${warehouseId}|${v.id}|${m.lot ?? ''}`;
+      if (seen.has(key)) {
+        m.errors.push({ row: m.row, field: 'sku', message: `Saldo repetido en la planilla (fila ${seen.get(key)})` });
+        continue;
+      }
+      seen.set(key, m.row);
+      valid.push({ ...m, variantId: v.id, warehouseId, key, unitCost: m.cost ?? v.cost });
+    }
+
+    const result = this.emptyResult(options.dryRun, sheet.rows.length, sheet.unknownColumns);
+    result.valid = valid.length;
+    result.errors = mapped.flatMap((m) => m.errors);
+    result.preview = valid.slice(0, PREVIEW_ROWS).map((m) => ({
+      row: m.row,
+      action: current.has(m.key) ? options.onDuplicate : 'create',
+      sku: m.sku,
+      quantity: m.quantity,
+      current: current.get(m.key) ?? 0,
+      lot: m.lot,
+      expiresAt: m.expiresAt?.toISOString().slice(0, 10),
+    }));
+
+    for (const m of valid) {
+      const existing = current.get(m.key);
+      if (existing !== undefined && options.onDuplicate === 'skip') {
+        result.skipped++;
+        continue;
+      }
+      const delta = m.quantity! - (existing ?? 0);
+      if (delta === 0 || options.dryRun) {
+        existing === undefined ? result.created++ : result.updated++;
+        continue;
+      }
+      try {
+        await this.uow.run(async (tx, scope) => {
+          const lot = m.lot ? await this.ledger.lot(tx, m.variantId, m.lot, m.expiresAt) : null;
+          // Se recalcula contra la base por si el saldo cambió desde la revisión.
+          const item = await tx.stockItem.findFirst({ where: { warehouseId: m.warehouseId, variantId: m.variantId, lotId: lot?.id ?? null } });
+          const change = m.quantity! - Number(item?.onHand ?? 0);
+          if (change !== 0) {
+            await this.ledger.post(tx, {
+              warehouseId: m.warehouseId,
+              variantId: m.variantId,
+              lotId: lot?.id ?? null,
+              type: 'ADJUSTMENT',
+              quantity: change,
+              unitCost: m.unitCost,
+              referenceType: 'import',
+              reason: existing === undefined ? 'Stock inicial (importación)' : 'Conteo (importación)',
+            });
+          }
+          scope.auditLog({ action: 'stock.import', entityType: 'variant', entityId: m.variantId, after: { warehouseId: m.warehouseId, lot: m.lot, quantity: m.quantity } });
+        });
+        existing === undefined ? result.created++ : result.updated++;
+      } catch (e) {
+        result.errors.push(this.rowError(m.row, e));
+      }
+    }
+    return result;
+  }
+
   // ---------- Plantillas ----------
-  async template(kind: 'customers' | 'products'): Promise<Buffer> {
+  async template(kind: 'customers' | 'products' | 'stock'): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet(kind === 'customers' ? 'Clientes' : 'Productos');
-    const headers = kind === 'customers' ? CUSTOMER_TEMPLATE_HEADERS : PRODUCT_TEMPLATE_HEADERS;
+    const sheet = workbook.addWorksheet({ customers: 'Clientes', products: 'Productos', stock: 'Stock' }[kind]);
+    const headers = { customers: CUSTOMER_TEMPLATE_HEADERS, products: PRODUCT_TEMPLATE_HEADERS, stock: STOCK_TEMPLATE_HEADERS }[kind];
     sheet.addRow(headers);
     sheet.getRow(1).font = { bold: true };
     sheet.columns.forEach((c) => (c.width = 18));
     if (kind === 'customers') {
       sheet.addRow(['Ejemplo SRL', 'El Ejemplo', '30-71234567-1', 'RI', 'Restaurante', '011 15-4444-5555', 'compras@ejemplo.com', 30, 500000, 'Mayorista', '', 'Juana Pérez', 'Compras', 'gastronomía']);
+    } else if (kind === 'stock') {
+      sheet.addRow(['PIM-AHU-1KG', 40, 'DEP-01', 'L2410-07', '31/10/2027', 12000]);
     } else {
       sheet.addRow(['PIM-AHU', 'Pimentón ahumado', '1 kg', 'PIM-AHU-1KG', 1, 'UN', '', 12000, 18600, 25, 'Especias', 'España', 540]);
     }

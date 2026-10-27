@@ -64,6 +64,30 @@ export const createOrderSchema = z.object({
 });
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
+/** Solo pedidos en borrador: se reemplazan las líneas y se recalculan los precios. */
+export const updateOrderSchema = createOrderSchema
+  .pick({ warehouseId: true, requestedDate: true, notes: true, lines: true })
+  .partial()
+  .extend({ version: z.number().int().positive() });
+export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;
+
+/** Precios, margen y stock disponible de un pedido sin guardarlo. */
+export const orderPreviewSchema = createOrderSchema.pick({ customerId: true, warehouseId: true, lines: true });
+export type OrderPreviewInput = z.infer<typeof orderPreviewSchema>;
+
+export const orderTransitionSchema = z.object({
+  to: z.enum(['PICKING', 'READY', 'DISPATCHED', 'DELIVERED', 'CANCELLED']),
+  reason: z.string().max(300).optional(),
+});
+export type OrderTransitionInput = z.infer<typeof orderTransitionSchema>;
+
+export const orderListQuerySchema = z.object({
+  status: z.enum(['DRAFT', 'CONFIRMED', 'PICKING', 'READY', 'DISPATCHED', 'DELIVERED', 'INVOICED', 'CANCELLED']).optional(),
+  customerId: z.string().uuid().optional(),
+  q: z.string().optional(),
+});
+export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
+
 export const copilotMessageSchema = z.object({
   sessionId: z.string().uuid().optional(),
   message: z.string().min(1).max(8000),

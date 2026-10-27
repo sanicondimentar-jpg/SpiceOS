@@ -16,14 +16,15 @@ export interface PricedVariant {
 export class CatalogFacade {
   async price(tx: Tx, items: { variantId: string; quantity: number }[], customerPriceListId: string | null): Promise<Map<string, PricedVariant>> {
     const ids = items.map((i) => i.variantId);
-    // Sin lista asignada al cliente se usa la lista por defecto de la empresa.
-    const priceListId =
-      customerPriceListId ?? (await tx.priceList.findFirst({ where: { isDefault: true }, select: { id: true } }))?.id ?? null;
+    // Lista del cliente primero; lo que no tenga precio ahí se busca en la lista por defecto
+    // (por ejemplo, un sobre suelto que solo está en la lista minorista).
+    const defaultListId = (await tx.priceList.findFirst({ where: { isDefault: true }, select: { id: true } }))?.id ?? null;
+    const listIds = [...new Set([customerPriceListId, defaultListId].filter((x): x is string => !!x))];
     const variants = await tx.productVariant.findMany({
       where: { id: { in: ids }, isActive: true },
       include: {
         product: { select: { name: true } },
-        priceListItems: priceListId ? { where: { priceListId }, orderBy: { minQuantity: 'desc' } } : false,
+        priceListItems: listIds.length ? { where: { priceListId: { in: listIds } }, orderBy: { minQuantity: 'desc' } } : false,
       },
     });
     if (variants.length !== new Set(ids).size) throw new BusinessRuleError('Hay productos inexistentes o inactivos en el pedido');
@@ -31,8 +32,9 @@ export class CatalogFacade {
     const qty = new Map(items.map((i) => [i.variantId, i.quantity]));
     return new Map(
       variants.map((v) => {
-        const tiers = (v as typeof v & { priceListItems?: { minQuantity: unknown; price: unknown }[] }).priceListItems ?? [];
-        const tier = tiers.find((t) => Number(t.minQuantity) <= (qty.get(v.id) ?? 0));
+        const tiers = (v as typeof v & { priceListItems?: { priceListId: string; minQuantity: unknown; price: unknown }[] }).priceListItems ?? [];
+        const pick = (listId: string | null) => tiers.find((t) => t.priceListId === listId && Number(t.minQuantity) <= (qty.get(v.id) ?? 0));
+        const tier = pick(customerPriceListId) ?? pick(defaultListId);
         return [
           v.id,
           {
