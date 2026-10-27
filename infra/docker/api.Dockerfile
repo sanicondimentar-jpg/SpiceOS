@@ -1,18 +1,19 @@
 # syntax=docker/dockerfile:1.7
-FROM node:22.12-alpine AS base
-RUN corepack enable
+FROM node:22.22-alpine AS base
+# Prisma necesita OpenSSL en Alpine.
+RUN apk add --no-cache openssl && corepack enable
 WORKDIR /repo
 
 FROM base AS build
 COPY . .
+# "@spiceos/api..." construye también los paquetes del workspace de los que depende (contracts).
+# El cliente de Prisma se genera dentro de /out porque deploy instala un @prisma/client nuevo.
 RUN pnpm install --frozen-lockfile \
- && pnpm --filter @spiceos/api exec prisma generate \
- && pnpm --filter @spiceos/api build \
- && pnpm --filter @spiceos/api deploy --prod /out \
- && cp -r apps/api/dist /out/dist && cp -r apps/api/prisma /out/prisma \
- && cp -r apps/api/node_modules/.prisma /out/node_modules/.prisma
+ && pnpm --filter "@spiceos/api..." build \
+ && pnpm --filter @spiceos/api deploy --legacy --prod /out \
+ && cd /out && /repo/apps/api/node_modules/.bin/prisma generate --schema prisma/schema.prisma
 
-FROM node:22.12-alpine AS runtime
+FROM base AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 RUN addgroup -S app && adduser -S app -G app
