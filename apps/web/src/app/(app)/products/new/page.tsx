@@ -112,7 +112,7 @@ export default function NewProductPage() {
               <Field label="Presentación" htmlFor={`name-${i}`} error={errors[`variants.${i}.name`]}>
                 <Input id={`name-${i}`} value={v.name} onChange={(e) => setVariant(i, 'name', e.target.value)} placeholder="1 kg" />
               </Field>
-              <Field label="Peso neto (kg)" htmlFor={`kg-${i}`} error={errors[`variants.${i}.netWeightKg`]}>
+              <Field label="Peso neto (kg)" hint="Vacío si se vende por unidad" htmlFor={`kg-${i}`} error={errors[`variants.${i}.netWeightKg`]}>
                 <Input id={`kg-${i}`} inputMode="decimal" value={v.netWeightKg} onChange={(e) => setVariant(i, 'netWeightKg', e.target.value)} />
               </Field>
               <Field label="Unidad de venta" htmlFor={`unit-${i}`}>

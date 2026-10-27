@@ -19,7 +19,7 @@ export interface VariantRow {
   name: string;
   unit: string;
   isActive: boolean;
-  netWeightKg: number;
+  netWeightKg: number | null;
   minStock: number;
   reorderPoint: number;
   minMarginPct: number;
