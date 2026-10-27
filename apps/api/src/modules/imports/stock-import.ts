@@ -1,4 +1,5 @@
 import type { ImportRowError } from '@spiceos/contracts';
+import { lotCodeFor } from '../inventory/lot-code';
 import { parseNumber, type SheetRow } from './spreadsheet';
 
 export const STOCK_COLUMNS: Record<string, string[]> = {
@@ -42,7 +43,6 @@ export function mapStockRow({ row, values }: SheetRow): StockRowResult {
 
   const expiresAt = values.expiresAt ? parseDate(values.expiresAt) : undefined;
   if (values.expiresAt && !expiresAt) err('expiresAt', `Fecha de vencimiento inválida: ${values.expiresAt} (usá dd/mm/aaaa)`);
-  if (expiresAt && !values.lot) err('lot', 'Hay vencimiento pero falta el lote');
 
   const cost = values.cost != null ? parseNumber(values.cost) : undefined;
   if (cost === null || (cost !== undefined && cost < 0)) err('cost', `Costo inválido: ${values.cost}`);
@@ -52,7 +52,7 @@ export function mapStockRow({ row, values }: SheetRow): StockRowResult {
     sku: values.sku?.toUpperCase(),
     quantity: quantity ?? undefined,
     warehouse: values.warehouse?.toUpperCase(),
-    lot: values.lot,
+    lot: lotCodeFor(values.lot, expiresAt),
     expiresAt: expiresAt ?? undefined,
     cost: cost ?? undefined,
     errors,
