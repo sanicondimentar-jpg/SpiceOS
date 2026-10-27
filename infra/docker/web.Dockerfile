@@ -5,6 +5,10 @@ WORKDIR /repo
 
 FROM base AS build
 COPY . .
+# Next.js fija las variables NEXT_PUBLIC_* al compilar. En producción la API se sirve
+# en el mismo dominio bajo /api, así que alcanza con una ruta relativa.
+ARG NEXT_PUBLIC_API_URL=/api/v1
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1
 RUN pnpm install --frozen-lockfile && pnpm --filter "@spiceos/web..." build
 
 FROM node:22.22-alpine AS runtime

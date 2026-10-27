@@ -1,0 +1,15 @@
+# HTTPS automático con Let's Encrypt para los dos subdominios.
+{$APP_DOMAIN} {
+	encode zstd gzip
+	handle /api/* {
+		reverse_proxy api:4000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+{$AUTH_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy keycloak:8080
+}

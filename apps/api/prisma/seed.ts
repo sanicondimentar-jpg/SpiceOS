@@ -71,7 +71,7 @@ async function main() {
       keycloakOrgId: process.env.SEED_KEYCLOAK_ORG_ID ?? 'sani-condimentar',
       legalName: 'Sani Condimentar',
       tradeName: 'Sani Condimentar',
-      taxId: '30-00000000-0',
+      taxId: process.env.SEED_COMPANY_CUIT ?? '30-00000000-0',
     },
     update: {},
   });
@@ -152,7 +152,9 @@ async function main() {
     update: {},
   });
 
-  for (const [i, p] of PRODUCTS.entries()) {
+  // En producción el catálogo real se carga desde la planilla; los productos de ejemplo solo sirven en desarrollo.
+  const demoData = process.env.SEED_DEMO_DATA !== 'false';
+  for (const [i, p] of (demoData ? PRODUCTS : []).entries()) {
     const product = await prisma.product.upsert({
       where: { tenantId_code: { tenantId, code: p.code } },
       create: { tenantId, categoryId: category.id, ...p },

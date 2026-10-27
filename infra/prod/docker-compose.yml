@@ -1,0 +1,164 @@
+# Producción en un solo servidor (desde 2 vCPU / 4 GB). Solo Caddy publica puertos (80/443);
+# el resto de los servicios queda en la red interna de Docker.
+# Lo maneja deploy.sh, que define IMAGE_PREFIX e IMAGE_TAG y genera .env la primera vez.
+name: spiceos
+
+x-app: &app
+  image: ${IMAGE_PREFIX}/api:${IMAGE_TAG}
+  env_file: .env
+  restart: unless-stopped
+  depends_on:
+    postgres: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ../compose/postgres-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb"]
+    volumes: [redis-data:/data]
+
+  rabbitmq:
+    image: rabbitmq:4.0-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    volumes: [rabbit-data:/var/lib/rabbitmq]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      retries: 20
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    restart: unless-stopped
+    volumes: [qdrant-data:/qdrant/storage]
+
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    restart: unless-stopped
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes: [minio-data:/data]
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.7
+    restart: unless-stopped
+    command:
+      - start
+      - --import-realm
+      - --features=organization
+      - --http-enabled=true
+      - --proxy-headers=xforwarded
+      - --hostname=https://${AUTH_DOMAIN}
+      - --health-enabled=true
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=15
+    volumes:
+      - ../keycloak/realm-spiceos.json:/opt/keycloak/data/import/realm-spiceos.json:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app
+    command: ["node", "dist/main.js"]
+
+  worker:
+    <<: *app
+    command: ["node", "dist/worker.js"]
+
+  scheduler:
+    <<: *app
+    command: ["node", "dist/scheduler.js"]
+
+  web:
+    image: ${IMAGE_PREFIX}/web:${IMAGE_TAG}
+    env_file: .env
+    restart: unless-stopped
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+    depends_on: [api]
+
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      AUTH_DOMAIN: ${AUTH_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    # Los contenedores resuelven los dominios públicos hacia Caddy sin salir del servidor
+    # (la API valida tokens contra https://AUTH_DOMAIN y la web habla con Keycloak por ahí).
+    networks:
+      default:
+        aliases: ["${APP_DOMAIN}", "${AUTH_DOMAIN}"]
+    depends_on: [web, api, keycloak]
+
+  # Imagen con las herramientas de desarrollo (prisma CLI, ts-node): migraciones y datos iniciales.
+  tools:
+    image: ${IMAGE_PREFIX}/api-tools:${IMAGE_TAG}
+    profiles: ["tools"]
+    env_file: .env
+    working_dir: /repo/apps/api
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # Copia diaria de la base en ./backups (se conservan 14 días).
+  backup:
+    image: postgres:16.6-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [./backups:/backups]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          ts=$$(date +%Y%m%d-%H%M)
+          for db in ${POSTGRES_DB} keycloak; do
+            pg_dump -Fc "$$db" > "/backups/$$db-$$ts.dump" || echo "fallo backup $$db"
+          done
+          find /backups -name '*.dump' -mtime +14 -delete
+          sleep 86400
+        done
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes:
+  pg-data:
+  redis-data:
+  rabbit-data:
+  qdrant-data:
+  minio-data:
+  caddy-data:
+  caddy-config:
