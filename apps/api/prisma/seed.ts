@@ -151,6 +151,12 @@ async function main() {
     create: { tenantId, name: 'Mayorista', isDefault: true },
     update: {},
   });
+  // La planilla del catálogo trae "Precio Minorista" (la lista de la web y de venta por teléfono).
+  await prisma.priceList.upsert({
+    where: { tenantId_name: { tenantId, name: 'Minorista' } },
+    create: { tenantId, name: 'Minorista' },
+    update: {},
+  });
 
   // En producción el catálogo real se carga desde la planilla; los productos de ejemplo solo sirven en desarrollo.
   const demoData = process.env.SEED_DEMO_DATA !== 'false';
