@@ -1,0 +1,47 @@
+name: Diagnóstico
+
+# Junta estado y logs recientes del servidor para diagnosticar fallas sin entrar por SSH.
+# El repo es público y los logs de Actions también: la salida se cifra con la clave pública
+# que se pasa al lanzarlo (RSA en PEM, base64 en una línea) y solo la lee quien tiene la privada.
+on:
+  workflow_dispatch:
+    inputs:
+      public_key_b64:
+        description: Clave pública RSA (PEM codificado en base64, una línea)
+        required: true
+      services:
+        description: Servicios de los que juntar logs
+        default: keycloak web api caddy
+      lines:
+        description: Líneas de log por servicio
+        default: "200"
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Clave SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ vars.SSH_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 15 "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Juntar y cifrar
+        env:
+          PUB: ${{ inputs.public_key_b64 }}
+          SERVICES: ${{ inputs.services }}
+          LINES: ${{ inputs.lines }}
+        run: |
+          printf '%s' "$PUB" | base64 -d > pub.pem
+          ssh "root@${{ vars.SSH_HOST }}" "cd /opt/spiceos/infra/prod && docker compose ps && free -m && docker compose logs --no-color --tail ${LINES//[^0-9]/} ${SERVICES//[^a-z ]/}" > out.txt 2>&1 || true
+          openssl rand -hex 32 > k
+          gzip -9c out.txt | openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:k -out out.enc
+          openssl pkeyutl -encrypt -pubin -inkey pub.pem -in k -out k.enc
+          echo "=== KEY ==="; base64 -w0 k.enc; echo
+          echo "=== DATA ==="; base64 -w0 out.enc; echo
+          echo "=== END ==="
+          rm -f out.txt k
