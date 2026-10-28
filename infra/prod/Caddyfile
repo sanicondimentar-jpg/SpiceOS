@@ -1,7 +1,9 @@
 # HTTPS automático con Let's Encrypt para los dos subdominios.
 {$APP_DOMAIN} {
 	encode zstd gzip
-	handle /api/* {
+	# /api/auth/* son las rutas de NextAuth y las atiende la web; el resto de la API va a Nest.
+	@api path /api/v1/* /api/docs* /api/openapi.json
+	handle @api {
 		reverse_proxy api:4000
 	}
 	handle {
