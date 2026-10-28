@@ -26,38 +26,51 @@ const NAV = [
   { href: '/settings', label: 'Configuración', icon: Settings, perm: 'core.settings.manage' },
 ];
 
-/** El menú se arma con los permisos del usuario: lo que no puede usar, no lo ve. */
-export function Sidebar() {
+/**
+ * El menú se arma con los permisos del usuario: lo que no puede usar, no lo ve.
+ * En el celular queda oculto y se abre como panel con el botón de la barra superior.
+ */
+export function Sidebar({ mobileOpen = false, onClose }: { mobileOpen?: boolean; onClose?: () => void }) {
   const pathname = usePathname();
   const { data: me } = useMe();
   const items = NAV.filter((i) => !i.perm || me?.permissions.includes(i.perm));
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex print:hidden">
-      <div className="flex h-14 items-center gap-2 border-b px-4">
-        <div className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">S</div>
-        <div className="leading-tight">
-          <div className="text-sm font-semibold">SpiceOS</div>
-          <div className="text-xs text-muted-foreground">{me?.company.tradeName ?? me?.company.legalName ?? '…'}</div>
+    <>
+      {mobileOpen && <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={onClose} aria-hidden />}
+      <aside
+        className={cn(
+          'w-60 shrink-0 flex-col border-r bg-card print:hidden',
+          mobileOpen ? 'fixed inset-y-0 left-0 z-50 flex shadow-xl' : 'hidden',
+          'md:static md:z-auto md:flex md:shadow-none',
+        )}
+      >
+        <div className="flex h-14 items-center gap-2 border-b px-4">
+          <div className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">S</div>
+          <div className="leading-tight">
+            <div className="text-sm font-semibold">SpiceOS</div>
+            <div className="text-xs text-muted-foreground">{me?.company.tradeName ?? me?.company.legalName ?? '…'}</div>
+          </div>
         </div>
-      </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
-        {items.map(({ href, label, icon: Icon }) => {
-          const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground',
-                active && 'bg-primary/10 font-medium text-primary',
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
-    </aside>
+        <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
+          {items.map(({ href, label, icon: Icon }) => {
+            const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={onClose}
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground',
+                  active && 'bg-primary/10 font-medium text-primary',
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
+    </>
   );
 }

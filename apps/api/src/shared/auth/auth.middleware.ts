@@ -1,4 +1,4 @@
-import { Injectable, NestMiddleware, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NestMiddleware, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
 import { randomUUID } from 'node:crypto';
@@ -31,6 +31,7 @@ const CACHE_TTL_MS = 60_000;
 export class AuthMiddleware implements NestMiddleware {
   private readonly jwks = createRemoteJWKSet(new URL(`${env().KEYCLOAK_ISSUER}/protocol/openid-connect/certs`));
   private readonly cache = new Map<string, CachedIdentity>();
+  private readonly logger = new Logger(AuthMiddleware.name);
 
   constructor(private readonly db: SystemPrismaService) {}
 
@@ -45,7 +46,9 @@ export class AuthMiddleware implements NestMiddleware {
         audience: env().KEYCLOAK_AUDIENCE,
       });
       token = payload as KeycloakToken;
-    } catch {
+    } catch (e) {
+      // Solo el motivo (vencido, audiencia, emisor, firma), nunca el token.
+      this.logger.warn(`Token rechazado: ${(e as { code?: string }).code ?? (e as Error).message}`);
       throw new UnauthorizedException('Token inválido o vencido');
     }
 

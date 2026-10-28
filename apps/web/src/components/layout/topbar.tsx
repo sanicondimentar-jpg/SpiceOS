@@ -1,13 +1,16 @@
 'use client';
 
-import { Bell, Search, Sparkles } from 'lucide-react';
+import { Bell, Menu, Search, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useMe } from '@/lib/hooks';
 
-export function Topbar({ onCopilot }: { onCopilot: () => void }) {
+export function Topbar({ onCopilot, onMenu }: { onCopilot: () => void; onMenu: () => void }) {
   const { data: me } = useMe();
   return (
     <header className="flex h-14 items-center gap-3 border-b bg-card px-4 print:hidden">
+      <Button variant="ghost" size="icon" aria-label="Menú" className="md:hidden" onClick={onMenu}>
+        <Menu className="h-5 w-5" />
+      </Button>
       <button
         onClick={onCopilot}
         className="flex h-9 flex-1 items-center gap-2 rounded-md border bg-background px-3 text-left text-sm text-muted-foreground md:max-w-md"
