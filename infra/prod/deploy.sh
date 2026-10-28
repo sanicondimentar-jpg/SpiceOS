@@ -80,7 +80,7 @@ log "Descargando imágenes $IMAGE_TAG"
 dc --profile tools pull --quiet
 
 log "Levantando servicios de base"
-dc up -d --wait postgres redis rabbitmq qdrant minio
+dc up -d --wait postgres redis rabbitmq qdrant
 
 log "Migraciones"
 dc --profile tools run --rm -e DATABASE_URL="$(get_env MIGRATION_DATABASE_URL)" tools \
