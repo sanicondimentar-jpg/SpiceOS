@@ -2,7 +2,7 @@
 
 SpiceOS corre en un único servidor con Docker Compose. Caddy atiende HTTPS (certificados de Let's Encrypt automáticos) y reparte:
 
-- `https://APP_DOMAIN` → la web; `https://APP_DOMAIN/api/*` → la API.
+- `https://APP_DOMAIN` → la web; `https://APP_DOMAIN/api/v1/*` → la API (`/api/auth/*` es el login de la web).
 - `https://AUTH_DOMAIN` → Keycloak (login con segundo factor).
 
 Postgres, Redis, RabbitMQ y Qdrant no publican puertos. MinIO no se instala todavía: la API aún no guarda archivos. La base se copia todos los días en `/opt/spiceos/infra/prod/backups` (14 días). El stack de observabilidad (Grafana, Prometheus, Loki, Tempo) no se instala acá para no gastar memoria.

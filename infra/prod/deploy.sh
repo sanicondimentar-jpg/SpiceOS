@@ -140,6 +140,8 @@ dc --profile tools run --rm \
 
 log "Aplicación"
 dc up -d --remove-orphans api worker scheduler web caddy backup
+# rsync reemplaza el Caddyfile por un archivo nuevo y el contenedor sigue viendo el viejo: hay que reiniciarlo.
+dc restart caddy
 
 for i in $(seq 1 30); do
   if curl -fsS "https://$APP_DOMAIN/api/v1/health" >/dev/null 2>&1; then
