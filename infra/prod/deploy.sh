@@ -103,6 +103,14 @@ for i in $(seq 1 60); do
   sleep 5
 done
 
+# El realm se importa una sola vez; las correcciones posteriores al JSON se aplican acá.
+# Sin estos valores la política OTP queda en período 0 y Keycloak falla al validar el código.
+kc update realms/spiceos -s otpPolicyType=totp -s otpPolicyAlgorithm=HmacSHA1 -s otpPolicyDigits=6 \
+  -s otpPolicyPeriod=30 -s otpPolicyLookAheadWindow=1 -s otpPolicyInitialCounter=0
+if ! kc get authentication/required-actions/UPDATE_PASSWORD -r spiceos >/dev/null 2>&1; then
+  kc create authentication/register-required-action -r spiceos -s providerId=UPDATE_PASSWORD -s name="Update Password"
+fi
+
 CLIENT_ID=$(kc get clients -r spiceos -q clientId=spiceos-web --fields id --format csv --noquotes)
 kc update "clients/$CLIENT_ID" -r spiceos \
   -s "redirectUris=[\"https://$APP_DOMAIN/*\"]" \
