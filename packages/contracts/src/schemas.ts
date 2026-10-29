@@ -115,6 +115,32 @@ export const webOrderSchema = z.object({
 });
 export type WebOrderInput = z.infer<typeof webOrderSchema>;
 
+/** Seguimiento público de un pedido: el número es la guía y el teléfono confirma que es de quien consulta. */
+export const webOrderTrackingSchema = z.object({
+  number: z.string().trim().min(1, 'Indicá el número de pedido').max(30),
+  phone: z
+    .string()
+    .trim()
+    .max(30)
+    .refine((v) => v.replace(/\D/g, '').length >= 8, 'Indicá el teléfono con el que hiciste el pedido'),
+});
+export type WebOrderTrackingInput = z.infer<typeof webOrderTrackingSchema>;
+
+export type WebOrderTrackingStep = 'received' | 'confirmed' | 'preparing' | 'ready' | 'shipped' | 'delivered' | 'cancelled';
+
+export interface WebOrderTracking {
+  number: string;
+  step: WebOrderTrackingStep;
+  label: string;
+  detail: string;
+  createdAt: string;
+  /** Primera vez que el pedido llegó a cada paso. */
+  history: { step: WebOrderTrackingStep; at: string }[];
+  /** Total con IVA si corresponde. */
+  total: number;
+  lines: { sku: string; description: string; quantity: number }[];
+}
+
 export const createSupplierSchema = z.object({
   code: z.string().trim().min(1).max(30),
   legalName: z.string().trim().min(2).max(200),
