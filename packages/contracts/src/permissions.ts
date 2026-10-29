@@ -15,6 +15,7 @@ export const PERMISSIONS = {
   catalog: { read: 'catalog.product.read', write: 'catalog.product.write', costRead: 'catalog.cost.read' },
   orders: { read: 'orders.order.read', write: 'orders.order.write', confirm: 'orders.order.confirm' },
   inventory: { read: 'inventory.stock.read', adjust: 'inventory.stock.adjust' },
+  purchasing: { read: 'purchasing.order.read', write: 'purchasing.order.write' },
   receivables: { read: 'receivables.account.read', write: 'receivables.payment.write' },
   documents: { read: 'documents.document.read', write: 'documents.document.write' },
   messaging: { read: 'messaging.conversation.read', send: 'messaging.message.send' },

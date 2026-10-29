@@ -14,7 +14,13 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true, bufferLogs: true });
   app.useLogger(app.get(Logger));
   app.use(helmet());
-  app.enableCors({ origin: config.CORS_ORIGINS.split(','), credentials: true });
+  // Detrás de Caddy: la IP real del cliente viene en X-Forwarded-For (la usa el límite de pedidos).
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  // /public/* lo usa la web saboracasa desde otro dominio y sin credenciales; el resto, solo la app.
+  const origins = config.CORS_ORIGINS.split(',');
+  app.enableCors((req: { url?: string }, cb: (err: Error | null, options: { origin: boolean | string[]; credentials: boolean }) => void) =>
+    cb(null, req.url?.startsWith('/api/v1/public/') ? { origin: true, credentials: false } : { origin: origins, credentials: true }),
+  );
   app.setGlobalPrefix('api/v1');
   app.enableShutdownHooks();
 

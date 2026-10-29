@@ -20,6 +20,7 @@ import { CatalogFacade } from '../catalog/catalog.facade';
 import { CrmFacade } from '../crm/crm.facade';
 import { InventoryFacade } from '../inventory/inventory.facade';
 import { InventoryService } from '../inventory/inventory.service';
+import { PurchasingService, type ShortageLine, type ShortageResult } from '../purchasing/purchasing.service';
 import { priceLines } from '../sales/quote-pricing';
 import { orderTax } from './order-tax';
 
@@ -31,6 +32,7 @@ class OrderEvents extends AggregateRoot {
 
 /** Transiciones válidas de un pedido. */
 const TRANSITIONS: Record<string, string[]> = {
+  PENDING_REVIEW: ['CONFIRMED', 'CANCELLED'],
   DRAFT: ['CONFIRMED', 'CANCELLED'],
   CONFIRMED: ['PICKING', 'CANCELLED'],
   PICKING: ['READY', 'CANCELLED'],
@@ -39,7 +41,11 @@ const TRANSITIONS: Record<string, string[]> = {
   DELIVERED: ['INVOICED'],
 };
 
+/** Estados en los que el pedido todavía se puede editar. */
+const EDITABLE: string[] = ['PENDING_REVIEW', 'DRAFT'];
+
 const STATUS_LABEL: Record<string, string> = {
+  PENDING_REVIEW: 'pendiente de revisión',
   DRAFT: 'borrador',
   CONFIRMED: 'confirmado',
   PICKING: 'en preparación',
@@ -58,6 +64,7 @@ export class OrdersService {
     private readonly catalog: CatalogFacade,
     private readonly inventory: InventoryFacade,
     private readonly stock: InventoryService,
+    private readonly purchasing: PurchasingService,
   ) {}
 
   /** Precios, margen y disponible por línea, sin guardar nada. Lo usa la pantalla de armado. */
@@ -144,21 +151,32 @@ export class OrdersService {
     });
   }
 
-  /** Edita un borrador: reemplaza líneas y recalcula precios con la lista vigente del cliente. */
+  /**
+   * Edita un borrador o un pedido web pendiente: reemplaza líneas y recalcula precios con la
+   * lista vigente del cliente. En un pedido web también se puede cambiar el cliente (por ejemplo,
+   * si ya existía con otro teléfono).
+   */
   update(id: string, input: UpdateOrderInput) {
     return this.uow.run(async (tx, scope) => {
       const order = await this.findOrder(tx, id);
-      if (order.status !== 'DRAFT') throw new BusinessRuleError('Solo se pueden editar pedidos en borrador');
+      if (!EDITABLE.includes(order.status)) throw new BusinessRuleError('Solo se pueden editar pedidos en borrador o pendientes de revisión');
       if (order.version !== input.version) throw new ConflictError('Otra persona modificó el pedido; recargalo y volvé a intentar');
       if (input.warehouseId) await this.assertWarehouse(tx, input.warehouseId, order.branchId);
+      const customerId = input.customerId ?? order.customerId;
       const data: Record<string, unknown> = {
         ...(input.warehouseId && { warehouseId: input.warehouseId }),
         ...(input.notes !== undefined && { notes: input.notes }),
         ...(input.withInvoice !== undefined && { withInvoice: input.withInvoice }),
         ...(input.requestedDate !== undefined && { requestedDate: input.requestedDate ? new Date(input.requestedDate) : null }),
       };
+      if (customerId !== order.customerId) {
+        if (order.status !== 'PENDING_REVIEW') throw new BusinessRuleError('Solo se puede cambiar el cliente de un pedido web pendiente');
+        await this.crm.assertCanOrder(tx, customerId);
+        if (order.createdCustomer) await this.crm.discardWebProspect(tx, scope, order.customerId, id);
+        Object.assign(data, { customerId, createdCustomer: false });
+      }
       if (input.lines) {
-        const { priceListId } = await this.crm.assertCanOrder(tx, order.customerId);
+        const { priceListId } = await this.crm.assertCanOrder(tx, customerId);
         const pricing = priceLines(input.lines, await this.catalog.price(tx, input.lines, priceListId), 100);
         await tx.salesOrderLine.deleteMany({ where: { orderId: id } });
         await tx.salesOrderLine.createMany({ data: pricing.lines.map((l) => ({ orderId: id, ...this.lineData(l) })) });
@@ -177,25 +195,38 @@ export class OrdersService {
     });
   }
 
-  /** Confirma: valida cliente, reserva stock por FEFO (guardando qué lote) y emite order.confirmed. */
+  /**
+   * Confirma (o aprueba un pedido web): valida cliente y reserva por FEFO lo que haya en stock
+   * (guardando qué lote). Lo que falta queda pendiente en la línea y se suma a la nota de pedido
+   * del proveedor; se reserva al empezar la preparación.
+   */
   confirm(id: string) {
     const ctx = RequestContextStore.get();
     return this.uow.run(async (tx, scope) => {
       const order = await this.findOrder(tx, id);
       this.assertTransition(order.status, 'CONFIRMED');
       await this.crm.assertCanOrder(tx, order.customerId);
-      for (const line of order.lines) {
-        const label = `${line.variant.product.name} ${line.variant.name} (${line.variant.sku})`;
-        const allocations = await this.inventory.reserve(tx, order.warehouseId, line.variantId, Number(line.quantity), label);
+      const short: ShortageLine[] = [];
+      // Primero cajas y granel: los sueltos que falten se cubren abriendo las cajas que sobren.
+      const lines = [...order.lines].sort((a, b) => Number(a.variant.sku.endsWith('-U')) - Number(b.variant.sku.endsWith('-U')));
+      for (const line of lines) {
+        const { allocations, missing } = await this.inventory.reserveUpTo(tx, order.warehouseId, line.variantId, Number(line.quantity));
         await tx.orderAllocation.createMany({
           data: allocations.map((a) => ({ tenantId: ctx.tenantId, orderLineId: line.id, stockItemId: a.stockItemId, lotId: a.lotId, quantity: a.quantity })),
         });
+        if (missing > 0) {
+          await tx.salesOrderLine.update({ where: { id: line.id }, data: { backorderQty: missing } });
+          short.push({ orderLineId: line.id, variantId: line.variantId, missing });
+        }
       }
-      await this.setStatus(tx, order, 'CONFIRMED', { confirmedAt: new Date() });
-      this.emit(scope, 'order.confirmed', order, { confirmedAt: new Date().toISOString() });
-      scope.auditLog({ action: 'order.confirm', entityType: 'order', entityId: id });
+      const shortages: ShortageResult[] = short.length
+        ? await this.purchasing.addShortages(tx, scope, { branchId: order.branchId, warehouseId: order.warehouseId, orderNumber: order.number }, short)
+        : [];
+      await this.setStatus(tx, order, 'CONFIRMED', { confirmedAt: new Date() }, order.status === 'PENDING_REVIEW' ? 'Pedido web aprobado' : undefined);
+      this.emit(scope, 'order.confirmed', order, { confirmedAt: new Date().toISOString(), backorder: short.length > 0 });
+      scope.auditLog({ action: 'order.confirm', entityType: 'order', entityId: id, after: { shortages } });
       await this.stock.checkBelowMinimum(tx, scope, order.lines.map((l) => l.variantId));
-      return { id, status: 'CONFIRMED' };
+      return { id, status: 'CONFIRMED', shortages };
     });
   }
 
@@ -212,8 +243,11 @@ export class OrdersService {
         if (!input.reason?.trim()) throw new BusinessRuleError('Indicá el motivo de la cancelación');
         await this.inventory.release(tx, allocations);
         await tx.orderAllocation.deleteMany({ where: { orderLineId: { in: order.lines.map((l) => l.id) } } });
+        // Un pedido web descartado (duplicado, mal hecho) no deja un cliente fantasma.
+        if (order.status === 'PENDING_REVIEW' && order.createdCustomer) await this.crm.discardWebProspect(tx, scope, order.customerId, id);
         this.emit(scope, 'order.cancelled', order, { reason: input.reason });
       }
+      if (input.to === 'PICKING') await this.reserveBackorders(tx, order);
       if (input.to === 'DISPATCHED') {
         await this.inventory.consume(tx, allocations, { type: 'sales_order', id });
         this.emit(scope, 'order.dispatched', order, {});
@@ -277,12 +311,23 @@ export class OrdersService {
             include: {
               variant: { select: { sku: true, name: true, product: { select: { name: true } } } },
               allocations: { include: { lot: { select: { code: true, expiresAt: true } } } },
+              purchaseOrderLine: { select: { purchaseOrder: { select: { id: true, number: true, status: true } } } },
             },
           },
         },
       });
       if (!o) throw new NotFoundError('Pedido', id);
-      const available = o.status === 'DRAFT' ? await this.inventory.available(tx, o.warehouseId, o.lines.map((l) => l.variantId)) : null;
+      const available = EDITABLE.includes(o.status) ? await this.inventory.available(tx, o.warehouseId, o.lines.map((l) => l.variantId)) : null;
+      // Para detectar pedidos web repetidos: otros pedidos del mismo cliente en los últimos días.
+      const duplicates =
+        o.status === 'PENDING_REVIEW'
+          ? await tx.salesOrder.findMany({
+              where: { customerId: o.customerId, id: { not: o.id }, status: { not: 'CANCELLED' }, createdAt: { gte: new Date(o.createdAt.getTime() - 7 * 86_400_000) } },
+              orderBy: { createdAt: 'desc' },
+              take: 5,
+              select: { id: true, number: true, status: true, total: true, createdAt: true },
+            })
+          : [];
       return {
         id: o.id,
         number: o.number,
@@ -296,6 +341,11 @@ export class OrdersService {
         warehouse: o.warehouse,
         requestedDate: o.requestedDate,
         notes: o.notes,
+        contactName: o.contactName,
+        contactPhone: o.contactPhone,
+        webTotal: o.webTotal === null ? null : Number(o.webTotal),
+        createdCustomer: o.createdCustomer,
+        possibleDuplicates: duplicates.map((d) => ({ ...d, total: Number(d.total) })),
         subtotal: Number(o.subtotal),
         discountTotal: Number(o.discountTotal),
         total: Number(o.total),
@@ -315,11 +365,28 @@ export class OrdersService {
           lineTotal: Number(l.lineTotal),
           ...(canSeeCost && { unitCost: Number(l.unitCost) }),
           ...(available && { available: available.get(l.variantId) ?? 0 }),
+          backorderQty: Number(l.backorderQty),
+          purchaseOrder: l.purchaseOrderLine?.purchaseOrder ?? null,
           lots: l.allocations.map((a) => ({ lot: a.lot?.code ?? null, expiresAt: a.lot?.expiresAt ?? null, quantity: Number(a.quantity) })),
         })),
         history: o.statusHistory.map((h) => ({ from: h.from, to: h.to, at: h.changedAt, by: h.changedBy, reason: h.reason })),
       };
     });
+  }
+
+  /** Reserva lo que faltó al confirmar; si todavía no entró la mercadería, no se puede preparar. */
+  private async reserveBackorders(tx: Tx, order: Awaited<ReturnType<OrdersService['findOrder']>>) {
+    const ctx = RequestContextStore.get();
+    for (const line of order.lines.filter((l) => Number(l.backorderQty) > 0)) {
+      const label = `${line.variant.product.name} ${line.variant.name} (${line.variant.sku})`;
+      const allocations = await this.inventory.reserve(tx, order.warehouseId, line.variantId, Number(line.backorderQty), label).catch((e: Error) => {
+        throw new BusinessRuleError(`Todavía falta mercadería para preparar el pedido. ${e.message}`);
+      });
+      await tx.orderAllocation.createMany({
+        data: allocations.map((a) => ({ tenantId: ctx.tenantId, orderLineId: line.id, stockItemId: a.stockItemId, lotId: a.lotId, quantity: a.quantity })),
+      });
+      await tx.salesOrderLine.update({ where: { id: line.id }, data: { backorderQty: 0 } });
+    }
   }
 
   private tax(net: number, withInvoice: boolean) {

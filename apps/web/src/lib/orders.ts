@@ -4,9 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CreateOrderInput, OrderPreviewInput, OrderTransitionInput, UpdateOrderInput } from '@spiceos/contracts';
 import { api } from './api';
 
-export type OrderStatus = 'DRAFT' | 'CONFIRMED' | 'PICKING' | 'READY' | 'DISPATCHED' | 'DELIVERED' | 'INVOICED' | 'CANCELLED';
+export type OrderStatus = 'PENDING_REVIEW' | 'DRAFT' | 'CONFIRMED' | 'PICKING' | 'READY' | 'DISPATCHED' | 'DELIVERED' | 'INVOICED' | 'CANCELLED';
 
 export const STATUS_LABEL: Record<OrderStatus, string> = {
+  PENDING_REVIEW: 'Por revisar',
   DRAFT: 'Borrador',
   CONFIRMED: 'Confirmado',
   PICKING: 'En preparación',
@@ -18,6 +19,7 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
 };
 
 export const STATUS_TONE: Record<OrderStatus, 'neutral' | 'brand' | 'warn' | 'good' | 'bad'> = {
+  PENDING_REVIEW: 'warn',
   DRAFT: 'neutral',
   CONFIRMED: 'brand',
   PICKING: 'warn',
@@ -28,7 +30,7 @@ export const STATUS_TONE: Record<OrderStatus, 'neutral' | 'brand' | 'warn' | 'go
   CANCELLED: 'bad',
 };
 
-export const CHANNEL_LABEL: Record<string, string> = { sales_rep: 'Vendedor', whatsapp: 'WhatsApp', portal: 'Portal', copilot: 'Copiloto' };
+export const CHANNEL_LABEL: Record<string, string> = { sales_rep: 'Vendedor', whatsapp: 'WhatsApp', portal: 'Portal', copilot: 'Copiloto', web: 'Web' };
 
 export interface OrderRow {
   id: string;
@@ -59,6 +61,11 @@ export interface OrderDetail {
   warehouse: { id: string; name: string };
   requestedDate: string | null;
   notes: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  webTotal: number | null;
+  createdCustomer: boolean;
+  possibleDuplicates: { id: string; number: string; status: OrderStatus; total: number; createdAt: string }[];
   subtotal: number;
   discountTotal: number;
   total: number;
@@ -80,6 +87,8 @@ export interface OrderDetail {
     lineTotal: number;
     unitCost?: number;
     available?: number;
+    backorderQty: number;
+    purchaseOrder: { id: string; number: string; status: string } | null;
     lots: { lot: string | null; expiresAt: string | null; quantity: number }[];
   }[];
   history: { from: OrderStatus | null; to: OrderStatus; at: string; by: string | null; reason: string | null }[];
@@ -108,9 +117,10 @@ export interface OrderPreview {
   warnings: string[];
 }
 
-export const useOrders = (params: { status?: OrderStatus; q: string; customerId?: string }) =>
+export const useOrders = (params: { status?: OrderStatus; q: string; customerId?: string }, enabled = true) =>
   useQuery({
     queryKey: ['orders', params],
+    enabled,
     queryFn: () => {
       const qs = new URLSearchParams({ q: params.q });
       if (params.status) qs.set('status', params.status);
@@ -132,6 +142,7 @@ function useOrderMutation<I, O>(fn: (input: I) => Promise<O>) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['stock'] });
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
     },
   });
 }
@@ -142,7 +153,18 @@ export const useCreateOrder = () =>
 export const useUpdateOrder = (id: string) =>
   useOrderMutation((input: UpdateOrderInput) => api<{ id: string; version: number }>(`/orders/${id}`, { method: 'PATCH', body: JSON.stringify(input) }));
 
-export const useConfirmOrder = (id: string) => useOrderMutation(() => api<{ status: string }>(`/orders/${id}/confirm`, { method: 'POST' }));
+/** Qué se hizo con lo que faltó al confirmar: nota de pedido al proveedor, cajas a abrir o sin proveedor. */
+export interface Shortage {
+  sku: string;
+  description: string;
+  missing: number;
+  openPacks?: { sku: string; packs: number };
+  purchase?: { purchaseOrderId: string; number: string; supplier: string; sku: string; quantity: number };
+  noSupplier?: boolean;
+}
+
+export const useConfirmOrder = (id: string) =>
+  useOrderMutation(() => api<{ status: string; shortages: Shortage[] }>(`/orders/${id}/confirm`, { method: 'POST' }));
 
 export const useOrderTransition = (id: string) =>
   useOrderMutation((input: OrderTransitionInput) => api<{ status: string }>(`/orders/${id}/status`, { method: 'POST', body: JSON.stringify(input) }));

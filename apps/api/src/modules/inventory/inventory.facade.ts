@@ -33,25 +33,24 @@ export interface StoredAllocation {
 export class InventoryFacade {
   /** Reserva stock por FEFO bloqueando las filas de saldo (SELECT ... FOR UPDATE). */
   async reserve(tx: Tx, warehouseId: string, variantId: string, quantity: number, label = variantId): Promise<Allocation[]> {
-    const balances = await tx.$queryRaw<{ id: string; lot_id: string | null; expires_at: Date | null; available: number }[]>`
-      SELECT s.id, s.lot_id, l.expires_at, (s.on_hand - s.reserved)::float AS available
-      FROM stock_items s
-      LEFT JOIN lots l ON l.id = s.lot_id
-      WHERE s.warehouse_id = ${warehouseId}::uuid AND s.variant_id = ${variantId}::uuid
-        AND (l.id IS NULL OR (l.quality_status = 'APPROVED' AND (l.expires_at IS NULL OR l.expires_at > current_date)))
-      FOR UPDATE OF s`;
-    const allocations = allocateFefo(
-      balances.map((b) => ({ stockItemId: b.id, lotId: b.lot_id, expiresAt: b.expires_at, available: b.available })),
-      quantity,
-    );
+    const balances = await this.lockBalances(tx, warehouseId, variantId);
+    const allocations = allocateFefo(balances, quantity);
     if (!allocations) {
       const available = balances.reduce((s, b) => s + Math.max(b.available, 0), 0);
       throw new BusinessRuleError(`Stock insuficiente de ${label}: hay ${available} disponibles y se piden ${quantity}`);
     }
-    for (const a of allocations) {
-      await tx.stockItem.update({ where: { id: a.stockItemId }, data: { reserved: { increment: a.quantity }, version: { increment: 1 } } });
-    }
+    await this.hold(tx, allocations);
     return allocations;
+  }
+
+  /** Reserva lo que haya hasta `quantity` y devuelve cuánto faltó (pedido con faltante). */
+  async reserveUpTo(tx: Tx, warehouseId: string, variantId: string, quantity: number): Promise<{ allocations: Allocation[]; missing: number }> {
+    const balances = await this.lockBalances(tx, warehouseId, variantId);
+    const available = balances.reduce((s, b) => s + Math.max(b.available, 0), 0);
+    const take = Math.min(available, quantity);
+    const allocations = take > 0 ? allocateFefo(balances, take) ?? [] : [];
+    await this.hold(tx, allocations);
+    return { allocations, missing: Math.round((quantity - take) * 1000) / 1000 };
   }
 
   /** Devuelve al disponible lo reservado (pedido cancelado). */
@@ -149,6 +148,23 @@ export class InventoryFacade {
         AND (l.id IS NULL OR (l.quality_status = 'APPROVED' AND (l.expires_at IS NULL OR l.expires_at > current_date)))
       GROUP BY s.variant_id`;
     return new Map(rows.map((r) => [r.variant_id, r.available]));
+  }
+
+  private async lockBalances(tx: Tx, warehouseId: string, variantId: string) {
+    const rows = await tx.$queryRaw<{ id: string; lot_id: string | null; expires_at: Date | null; available: number }[]>`
+      SELECT s.id, s.lot_id, l.expires_at, (s.on_hand - s.reserved)::float AS available
+      FROM stock_items s
+      LEFT JOIN lots l ON l.id = s.lot_id
+      WHERE s.warehouse_id = ${warehouseId}::uuid AND s.variant_id = ${variantId}::uuid
+        AND (l.id IS NULL OR (l.quality_status = 'APPROVED' AND (l.expires_at IS NULL OR l.expires_at > current_date)))
+      FOR UPDATE OF s`;
+    return rows.map((b) => ({ stockItemId: b.id, lotId: b.lot_id, expiresAt: b.expires_at, available: b.available }));
+  }
+
+  private async hold(tx: Tx, allocations: Allocation[]) {
+    for (const a of allocations) {
+      await tx.stockItem.update({ where: { id: a.stockItemId }, data: { reserved: { increment: a.quantity }, version: { increment: 1 } } });
+    }
   }
 
   private async lockItem(tx: Tx, warehouseId: string, variantId: string, lotId: string | null) {

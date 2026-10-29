@@ -12,12 +12,13 @@ import { useMe } from '@/lib/hooks';
 import { CHANNEL_LABEL, STATUS_LABEL, STATUS_TONE, useOrders, type OrderStatus } from '@/lib/orders';
 import { cn, date, money } from '@/lib/utils';
 
-const TABS: (OrderStatus | undefined)[] = [undefined, 'DRAFT', 'CONFIRMED', 'PICKING', 'READY', 'DISPATCHED', 'DELIVERED', 'CANCELLED'];
+const TABS: (OrderStatus | undefined)[] = [undefined, 'PENDING_REVIEW', 'DRAFT', 'CONFIRMED', 'PICKING', 'READY', 'DISPATCHED', 'DELIVERED', 'CANCELLED'];
 
 export default function OrdersPage() {
   const [status, setStatus] = useState<OrderStatus>();
   const [q, setQ] = useState('');
   const { data, isLoading } = useOrders({ status, q });
+  const { data: pending } = useOrders({ status: 'PENDING_REVIEW', q: '' });
   const { data: me } = useMe();
   const canWrite = me?.permissions.includes('orders.order.write');
 
@@ -37,9 +38,21 @@ export default function OrdersPage() {
             className={cn('rounded-full border px-3 py-1.5 text-sm', s === status ? 'border-primary bg-primary/10 font-medium text-primary' : 'hover:bg-accent')}
           >
             {s ? STATUS_LABEL[s] : 'Todos'}
+            {s === 'PENDING_REVIEW' && !!pending?.length && (
+              <span className="ml-1.5 rounded-full bg-warning px-1.5 text-xs font-semibold text-white">{pending.length}</span>
+            )}
           </button>
         ))}
       </div>
+      {!!pending?.length && status !== 'PENDING_REVIEW' && (
+        <button
+          onClick={() => setStatus('PENDING_REVIEW')}
+          className="w-full rounded-md border border-warning/40 bg-warning/10 px-4 py-2.5 text-left text-sm hover:bg-warning/15"
+        >
+          {pending.length === 1 ? 'Hay 1 pedido de la web por revisar.' : `Hay ${pending.length} pedidos de la web por revisar.`}{' '}
+          <span className="font-medium underline">Revisarlos</span>
+        </button>
+      )}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input className="pl-9" placeholder="Buscar por número o cliente" aria-label="Buscar pedidos" value={q} onChange={(e) => setQ(e.target.value)} />
