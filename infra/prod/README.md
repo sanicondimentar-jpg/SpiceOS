@@ -27,7 +27,7 @@ Desde ahí cada merge a `main` que pase CI se despliega solo.
 1. La primera vez genera `.env` con contraseñas aleatorias. Ese archivo vive solo en el servidor (`/opt/spiceos/infra/prod/.env`, permisos 600); las contraseñas no pasan por GitHub.
 2. Descarga las imágenes del commit, levanta las bases y corre las migraciones.
 3. Reemplaza las contraseñas de desarrollo de los usuarios `spiceos_app` y `spiceos_system` de Postgres.
-4. Configura Keycloak: URLs del cliente web, organización `sani-condimentar` y usuario administrador.
+4. Configura Keycloak: URLs del cliente web, organización `sani-condimentar` y usuario administrador. Con `keycloak-login.py` deja la sesión de la web en 2 horas sin uso y el inicio de sesión en dos niveles: la contraseña se pide si pasaron más de 2 horas y el código del authenticator la primera vez y después cada 7 días (para eso hay que tildar "Recordarme" al entrar).
 5. Carga los datos base de la empresa (roles, impuestos, depósito, embudo) **sin** productos de ejemplo.
 6. Levanta API, worker, scheduler, web, Caddy y backups, y verifica `https://APP_DOMAIN/api/v1/health`.
 
