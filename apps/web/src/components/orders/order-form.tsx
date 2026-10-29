@@ -205,7 +205,7 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
           {result?.warnings.map((w) => <p key={w} className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2">{w}</p>)}
           {result?.lines.some((l) => l.quantity > l.available) && (
             <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
-              Hay productos sin stock suficiente: el pedido se puede guardar como borrador, pero no confirmar hasta que entre mercadería.
+              Hay productos sin stock suficiente: al confirmar se reserva lo que hay y lo que falta se suma a la nota de pedido del proveedor.
             </p>
           )}
           {error && <p className="text-destructive">{error}</p>}
@@ -279,7 +279,7 @@ function CustomerPicker({ onPick }: { onPick: (c: { id: string; name: string }) 
   );
 }
 
-function VariantPicker({ onPick }: { onPick: (l: { variantId: string; sku: string; description: string }) => void }) {
+export function VariantPicker({ onPick }: { onPick: (l: { variantId: string; sku: string; description: string }) => void }) {
   const [q, setQ] = useState('');
   const { data } = useProducts(q, 1);
   const options = q.length >= 2 ? data?.items.flatMap((p) => p.variants.filter((v) => v.isActive).map((v) => ({ p, v }))).slice(0, 30) : [];

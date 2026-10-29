@@ -57,7 +57,7 @@ export const createOrderSchema = z.object({
   branchId: z.string().uuid(),
   warehouseId: z.string().uuid(),
   quoteId: z.string().uuid().optional(),
-  channel: z.enum(['sales_rep', 'whatsapp', 'portal', 'copilot']).default('sales_rep'),
+  channel: z.enum(['sales_rep', 'whatsapp', 'portal', 'copilot', 'web']).default('sales_rep'),
   /** Sin factura se vende al precio sin IVA y no se suma IVA. */
   withInvoice: z.boolean().default(true),
   requestedDate: z.string().date().optional(),
@@ -66,9 +66,9 @@ export const createOrderSchema = z.object({
 });
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
-/** Solo pedidos en borrador: se reemplazan las líneas y se recalculan los precios. */
+/** Pedidos en borrador o pendientes de revisión: se reemplazan las líneas y se recalculan los precios. */
 export const updateOrderSchema = createOrderSchema
-  .pick({ warehouseId: true, withInvoice: true, requestedDate: true, notes: true, lines: true })
+  .pick({ customerId: true, warehouseId: true, withInvoice: true, requestedDate: true, notes: true, lines: true })
   .partial()
   .extend({ version: z.number().int().positive() });
 export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;
@@ -84,11 +84,80 @@ export const orderTransitionSchema = z.object({
 export type OrderTransitionInput = z.infer<typeof orderTransitionSchema>;
 
 export const orderListQuerySchema = z.object({
-  status: z.enum(['DRAFT', 'CONFIRMED', 'PICKING', 'READY', 'DISPATCHED', 'DELIVERED', 'INVOICED', 'CANCELLED']).optional(),
+  status: z.enum(['PENDING_REVIEW', 'DRAFT', 'CONFIRMED', 'PICKING', 'READY', 'DISPATCHED', 'DELIVERED', 'INVOICED', 'CANCELLED']).optional(),
   customerId: z.string().uuid().optional(),
   q: z.string().optional(),
 });
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
+
+/**
+ * Pedido hecho en la web pública (sin login). Queda pendiente de revisión: los precios
+ * los pone SpiceOS según la lista del modo elegido, no los que manda el navegador.
+ */
+export const webOrderSchema = z.object({
+  name: z.string().trim().min(2, 'Indicá tu nombre o comercio').max(120),
+  phone: z
+    .string()
+    .trim()
+    .max(30)
+    .refine((v) => v.replace(/\D/g, '').length >= 8, 'Indicá un teléfono válido'),
+  notes: z.string().trim().max(1000).optional(),
+  /** Mayorista: cajas y granel; minorista: sobres sueltos (SKU con "-U"). */
+  mode: z.enum(['mayorista', 'minorista']).default('mayorista'),
+  lines: z
+    .array(z.object({ sku: z.string().trim().min(1).max(40), quantity: z.number().int().positive().max(10_000) }))
+    .min(1)
+    .max(200),
+  /** Total que vio la persona en la web, para comparar al revisar. */
+  total: z.number().nonnegative().optional(),
+  /** Campo oculto del formulario: si viene con algo, lo completó un robot. */
+  website: z.string().max(200).optional(),
+});
+export type WebOrderInput = z.infer<typeof webOrderSchema>;
+
+export const createSupplierSchema = z.object({
+  code: z.string().trim().min(1).max(30),
+  legalName: z.string().trim().min(2).max(200),
+  taxId: z.string().max(20).optional(),
+  phone: z.string().max(30).optional(),
+  email: z.string().email().optional(),
+  leadTimeDays: z.number().int().min(0).max(365).default(7),
+});
+export type CreateSupplierInput = z.infer<typeof createSupplierSchema>;
+
+export const updateSupplierSchema = createSupplierSchema.partial().extend({ isActive: z.boolean().optional() });
+export type UpdateSupplierInput = z.infer<typeof updateSupplierSchema>;
+
+/** Asigna (o quita) presentaciones a un proveedor por SKU. */
+export const supplierProductsSchema = z.object({
+  skus: z.array(z.string().trim().min(1)).min(1).max(1000),
+  preferred: z.boolean().default(true),
+  remove: z.boolean().default(false),
+});
+export type SupplierProductsInput = z.infer<typeof supplierProductsSchema>;
+
+export const purchaseOrderListQuerySchema = z.object({
+  status: z.enum(['DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED']).optional(),
+  supplierId: z.string().uuid().optional(),
+});
+export type PurchaseOrderListQuery = z.infer<typeof purchaseOrderListQuerySchema>;
+
+/** Solo notas en borrador: cantidades y costos por línea (cantidad 0 quita la línea). */
+export const updatePurchaseOrderSchema = z.object({
+  version: z.number().int().positive(),
+  notes: z.string().max(2000).optional(),
+  expectedDate: z.string().date().nullable().optional(),
+  lines: z
+    .array(z.object({ variantId: z.string().uuid(), quantity: z.number().nonnegative(), unitCost: z.number().nonnegative().optional() }))
+    .optional(),
+});
+export type UpdatePurchaseOrderInput = z.infer<typeof updatePurchaseOrderSchema>;
+
+export const purchaseOrderTransitionSchema = z.object({
+  to: z.enum(['SENT', 'RECEIVED', 'CANCELLED']),
+  reason: z.string().max(300).optional(),
+});
+export type PurchaseOrderTransitionInput = z.infer<typeof purchaseOrderTransitionSchema>;
 
 export const copilotMessageSchema = z.object({
   sessionId: z.string().uuid().optional(),

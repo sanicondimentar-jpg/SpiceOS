@@ -58,7 +58,7 @@ export class Customer extends AggregateRoot {
       id: randomUUID(),
       taxId: normalizeTaxId(input.taxId),
       phone: normalizePhone(input.phone),
-      status: input.source === 'whatsapp' ? 'PROSPECT' : 'ACTIVE',
+      status: input.source === 'whatsapp' || input.source === 'web' ? 'PROSPECT' : 'ACTIVE',
       tags: input.tags ?? [],
       version: 1,
     });

@@ -21,6 +21,7 @@ import {
   useUpdateOrder,
   type OrderDetail,
   type OrderStatus,
+  type Shortage,
 } from '@/lib/orders';
 import { cn, date, money, number } from '@/lib/utils';
 
@@ -46,6 +47,7 @@ function Order({ id }: { id: string }) {
   const { data: me } = useMe();
   const initialError = useSearchParams().get('error');
   const [editing, setEditing] = useState(false);
+  const [shortages, setShortages] = useState<Shortage[] | null>(null);
   const can = (p: string) => !!me?.permissions.includes(p);
   if (isLoading || !o) return <Skeleton className="mx-auto h-96 max-w-6xl" />;
 
@@ -67,8 +69,11 @@ function Order({ id }: { id: string }) {
             {o.requestedDate && ` · entrega ${date(o.requestedDate)}`}
           </p>
         </div>
-        {!editing && <Actions order={o} can={can} onEdit={() => setEditing(true)} initialError={initialError} />}
+        {!editing && <Actions order={o} can={can} onEdit={() => setEditing(true)} onConfirmed={setShortages} initialError={initialError} />}
       </div>
+
+      {shortages && <ShortagesResult shortages={shortages} onClose={() => setShortages(null)} />}
+      {o.status === 'PENDING_REVIEW' && !editing && <WebReview order={o} />}
 
       {editing ? (
         <EditDraft order={o} onDone={() => setEditing(false)} />
@@ -83,7 +88,16 @@ function Order({ id }: { id: string }) {
   );
 }
 
-function Actions({ order, can, onEdit, initialError }: { order: OrderDetail; can: (p: string) => boolean; onEdit: () => void; initialError: string | null }) {
+/** Motivos rápidos para descartar un pedido web. */
+const DISCARD_REASONS = ['Pedido duplicado', 'Pedido mal hecho', 'El cliente lo canceló'];
+
+function Actions({ order, can, onEdit, onConfirmed, initialError }: {
+  order: OrderDetail;
+  can: (p: string) => boolean;
+  onEdit: () => void;
+  onConfirmed: (shortages: Shortage[] | null) => void;
+  initialError: string | null;
+}) {
   const confirm = useConfirmOrder(order.id);
   const transition = useOrderTransition(order.id);
   const [cancelling, setCancelling] = useState(false);
@@ -91,22 +105,32 @@ function Actions({ order, can, onEdit, initialError }: { order: OrderDetail; can
   const next = NEXT_ACTION[order.status];
   const busy = confirm.isPending || transition.isPending;
   const error = confirm.error?.message ?? transition.error?.message ?? (confirm.isIdle && transition.isIdle ? initialError : null);
+  const review = order.status === 'PENDING_REVIEW';
 
   return (
     <div className="ml-auto flex max-w-xl flex-col items-end gap-2 print:hidden">
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="outline" size="sm" onClick={() => window.print()}><Printer className="h-4 w-4" /> Hoja de preparación</Button>
-        {order.status === 'DRAFT' && can('orders.order.write') && <Button variant="outline" size="sm" onClick={onEdit}>Editar</Button>}
+        {(order.status === 'DRAFT' || review) && can('orders.order.write') && <Button variant="outline" size="sm" onClick={onEdit}>Editar</Button>}
         {order.nextStatuses.includes('CANCELLED') && can('orders.order.confirm') && !cancelling && (
-          <Button variant="outline" size="sm" onClick={() => setCancelling(true)}>Cancelar pedido</Button>
+          <Button variant="outline" size="sm" onClick={() => setCancelling(true)}>{review ? 'Descartar' : 'Cancelar pedido'}</Button>
         )}
-        {order.status === 'DRAFT' && can('orders.order.confirm') && (
-          <Button size="sm" disabled={busy} onClick={() => confirm.mutate(undefined)}>{confirm.isPending ? 'Reservando stock…' : 'Confirmar y reservar stock'}</Button>
+        {(order.status === 'DRAFT' || review) && can('orders.order.confirm') && (
+          <Button size="sm" disabled={busy} onClick={() => confirm.mutate(undefined, { onSuccess: (r) => onConfirmed(r.shortages.length ? r.shortages : null) })}>
+            {confirm.isPending ? 'Reservando stock…' : review ? 'Aprobar y reservar stock' : 'Confirmar y reservar stock'}
+          </Button>
         )}
         {next && can('orders.order.write') && (
           <Button size="sm" disabled={busy} onClick={() => transition.mutate({ to: next.to })}>{next.label}</Button>
         )}
       </div>
+      {cancelling && review && (
+        <div className="flex flex-wrap justify-end gap-2">
+          {DISCARD_REASONS.map((r) => (
+            <Button key={r} type="button" variant="outline" size="sm" className={cn(reason === r && 'border-primary text-primary')} onClick={() => setReason(r)}>{r}</Button>
+          ))}
+        </div>
+      )}
       {cancelling && (
         <form
           className="flex w-full gap-2"
@@ -115,12 +139,13 @@ function Actions({ order, can, onEdit, initialError }: { order: OrderDetail; can
             transition.mutate({ to: 'CANCELLED', reason }, { onSuccess: () => setCancelling(false) });
           }}
         >
-          <Input autoFocus aria-label="Motivo de la cancelación" placeholder="Motivo de la cancelación" value={reason} onChange={(e) => setReason(e.target.value)} />
-          <Button type="submit" variant="destructive" size="sm" className="h-9" disabled={!reason.trim() || busy}>Cancelar</Button>
+          <Input autoFocus aria-label="Motivo" placeholder={review ? 'Motivo del descarte' : 'Motivo de la cancelación'} value={reason} onChange={(e) => setReason(e.target.value)} />
+          <Button type="submit" variant="destructive" size="sm" className="h-9" disabled={!reason.trim() || busy}>{review ? 'Descartar' : 'Cancelar'}</Button>
           <Button type="button" variant="ghost" size="sm" className="h-9" onClick={() => setCancelling(false)}>Volver</Button>
         </form>
       )}
       {order.status === 'READY' && <p className="text-xs text-muted-foreground">Al despachar se descuenta el stock de los lotes reservados.</p>}
+      {review && <p className="text-right text-xs text-muted-foreground">Al aprobarlo se reserva lo que hay en stock; lo que falte se suma a la nota de pedido del proveedor.</p>}
       {error && <p className="text-right text-sm text-destructive">{error}</p>}
     </div>
   );
@@ -128,6 +153,8 @@ function Actions({ order, can, onEdit, initialError }: { order: OrderDetail; can
 
 function Lines({ order }: { order: OrderDetail }) {
   const showLots = order.lines.some((l) => l.lots.length);
+  const showAvailable = order.status === 'DRAFT' || order.status === 'PENDING_REVIEW';
+  const showMissing = order.lines.some((l) => l.backorderQty > 0);
   return (
     <Card className="overflow-x-auto">
       <table className="w-full min-w-[760px] text-sm">
@@ -136,7 +163,8 @@ function Lines({ order }: { order: OrderDetail }) {
             <th className="px-4 py-3 font-medium">Producto</th>
             <th className="px-4 py-3 text-right font-medium">Cantidad</th>
             {showLots && <th className="px-4 py-3 font-medium">Lotes</th>}
-            {order.status === 'DRAFT' && <th className="px-4 py-3 text-right font-medium print:hidden">Disponible</th>}
+            {showAvailable && <th className="px-4 py-3 text-right font-medium print:hidden">Disponible</th>}
+            {showMissing && <th className="px-4 py-3 font-medium">Falta</th>}
             <th className="px-4 py-3 text-right font-medium">Precio</th>
             <th className="px-4 py-3 text-right font-medium">Desc.</th>
             <th className="px-4 py-3 text-right font-medium">Total</th>
@@ -156,8 +184,20 @@ function Lines({ order }: { order: OrderDetail }) {
                   {l.lots.map((x, i) => <div key={i}>{x.lot ?? 'sin lote'} × {number(x.quantity)}{x.expiresAt && <span className="text-muted-foreground"> · vence {date(x.expiresAt)}</span>}</div>)}
                 </td>
               )}
-              {order.status === 'DRAFT' && (
+              {showAvailable && (
                 <td className={cn('px-4 py-2.5 text-right tabular-nums print:hidden', (l.available ?? 0) < l.quantity && 'font-medium text-destructive')}>{number(l.available)}</td>
+              )}
+              {showMissing && (
+                <td className="px-4 py-2.5 text-xs">
+                  {l.backorderQty > 0 && (
+                    <>
+                      <span className="font-medium text-destructive">{number(l.backorderQty)}</span>
+                      {l.purchaseOrder && (
+                        <> · <Link href={`/purchases/${l.purchaseOrder.id}`} className="hover:underline">{l.purchaseOrder.number}</Link></>
+                      )}
+                    </>
+                  )}
+                </td>
               )}
               <td className="px-4 py-2.5 text-right tabular-nums">{money(l.unitPrice)}</td>
               <td className="px-4 py-2.5 text-right tabular-nums">{l.discountPct ? `${number(l.discountPct)} %` : '—'}</td>
@@ -206,7 +246,7 @@ function EditDraft({ order, onDone }: { order: OrderDetail; onDone: () => void }
   return (
     <>
       <OrderForm
-        lockCustomer
+        lockCustomer={order.status !== 'PENDING_REVIEW'}
         initial={{
           customer: { id: order.customer.id, name: order.customer.tradeName ?? order.customer.legalName },
           warehouseId: order.warehouse.id,
@@ -229,7 +269,7 @@ function EditDraft({ order, onDone }: { order: OrderDetail; onDone: () => void }
             label: 'Guardar cambios',
             onSubmit: (d) =>
               update.mutate(
-                { version: order.version, warehouseId: d.warehouseId, withInvoice: d.withInvoice, requestedDate: d.requestedDate, notes: d.notes ?? '', lines: d.lines },
+                { version: order.version, customerId: d.customerId, warehouseId: d.warehouseId, withInvoice: d.withInvoice, requestedDate: d.requestedDate, notes: d.notes ?? '', lines: d.lines },
                 { onSuccess: onDone },
               ),
           },
@@ -237,5 +277,76 @@ function EditDraft({ order, onDone }: { order: OrderDetail; onDone: () => void }
       />
       <div className="flex justify-end"><Button variant="ghost" onClick={onDone}>Descartar cambios</Button></div>
     </>
+  );
+}
+
+/** Datos del pedido web para decidir si se aprueba: quién lo hizo, total que vio y posibles repetidos. */
+function WebReview({ order }: { order: OrderDetail }) {
+  const phone = order.contactPhone?.replace(/\D/g, '');
+  const diff = order.webTotal != null ? Math.round(order.total - order.webTotal) : 0;
+  return (
+    <Card className="border-warning/50 bg-warning/5 print:hidden">
+      <CardContent className="space-y-2 p-4 text-sm">
+        <p className="font-medium">Pedido recibido desde la web: revisalo antes de aprobarlo.</p>
+        <p>
+          Lo hizo <span className="font-medium">{order.contactName}</span>
+          {phone && (
+            <>
+              {' '}· <a className="underline" href={`https://wa.me/${phone}`} target="_blank" rel="noreferrer">{order.contactPhone}</a>
+            </>
+          )}
+          {order.createdCustomer ? ' · cliente nuevo (se creó como prospecto con este pedido)' : ' · cliente existente, encontrado por teléfono'}.
+        </p>
+        {order.webTotal != null && diff !== 0 && (
+          <p>
+            En la web vio un total de {money(order.webTotal)} sin IVA; con los precios actuales da {money(order.total)} ({diff > 0 ? '+' : '−'}
+            {money(Math.abs(diff))}).
+          </p>
+        )}
+        {order.possibleDuplicates.length > 0 && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+            <p className="font-medium">¿Duplicado? El mismo cliente tiene otros pedidos de los últimos 7 días:</p>
+            <ul className="mt-1 space-y-0.5">
+              {order.possibleDuplicates.map((d) => (
+                <li key={d.id}>
+                  <Link href={`/orders/${d.id}`} className="font-mono text-xs underline">{d.number}</Link> · {STATUS_LABEL[d.status]} · {money(d.total)} sin IVA · {date(d.createdAt)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <p className="text-muted-foreground">Si algo está mal, usá Editar para corregir productos, cantidades, precios o el cliente. Si está repetido o no corresponde, descartalo.</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Resultado de la confirmación cuando faltó mercadería. */
+function ShortagesResult({ shortages, onClose }: { shortages: Shortage[]; onClose: () => void }) {
+  return (
+    <Card className="border-primary/40 print:hidden">
+      <CardContent className="space-y-2 p-4 text-sm">
+        <div className="flex items-start gap-2">
+          <p className="flex-1 font-medium">Pedido confirmado. Faltó mercadería en algunos productos:</p>
+          <Button variant="ghost" size="sm" onClick={onClose}>Cerrar</Button>
+        </div>
+        <ul className="space-y-1">
+          {shortages.map((s) => (
+            <li key={s.sku}>
+              <span className="font-medium">{s.description}</span> ({s.sku}): faltan {number(s.missing)}.
+              {s.openPacks && ` Abrí ${s.openPacks.packs} caja${s.openPacks.packs > 1 ? 's' : ''} ${s.openPacks.sku} del depósito.`}
+              {s.purchase && (
+                <>
+                  {' '}Se pidieron {number(s.purchase.quantity)} × {s.purchase.sku} a {s.purchase.supplier} en{' '}
+                  <Link href={`/purchases/${s.purchase.purchaseOrderId}`} className="underline">{s.purchase.number}</Link>.
+                </>
+              )}
+              {s.noSupplier && <span className="text-destructive"> No tiene proveedor asignado: hay que pedirlo a mano.</span>}
+            </li>
+          ))}
+        </ul>
+        <p className="text-muted-foreground">Lo que falta se reserva al empezar la preparación, cuando haya entrado la mercadería.</p>
+      </CardContent>
+    </Card>
   );
 }

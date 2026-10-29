@@ -33,7 +33,7 @@ const ROLES: { key: string; name: string; maxDiscount: number; permissions: stri
     key: 'deposito',
     name: 'Depósito',
     maxDiscount: 0,
-    permissions: [PERMISSIONS.catalog.read, PERMISSIONS.inventory.read, PERMISSIONS.inventory.adjust, PERMISSIONS.orders.read, PERMISSIONS.documents.read, PERMISSIONS.copilot.use],
+    permissions: [PERMISSIONS.catalog.read, PERMISSIONS.inventory.read, PERMISSIONS.inventory.adjust, PERMISSIONS.orders.read, PERMISSIONS.purchasing.read, PERMISSIONS.documents.read, PERMISSIONS.copilot.use],
   },
   {
     key: 'cobranzas',
@@ -85,6 +85,13 @@ async function main() {
   const warehouse = await prisma.warehouse.upsert({
     where: { tenantId_code: { tenantId, code: 'DEP-01' } },
     create: { tenantId, branchId: branch.id, code: 'DEP-01', name: 'Depósito principal' },
+    update: {},
+  });
+
+  // Proveedor de toda la mercadería actual; los productos se le asignan desde Compras → Proveedores.
+  await prisma.supplier.upsert({
+    where: { tenantId_code: { tenantId, code: 'ESP51' } },
+    create: { tenantId, code: 'ESP51', legalName: 'Especias 51', country: 'AR' },
     update: {},
   });
 

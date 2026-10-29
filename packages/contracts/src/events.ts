@@ -39,6 +39,7 @@ export const EVENT_TYPES = [
   'certification.expiring',
   'stock.below_minimum',
   'lot.expiring',
+  'purchase_order.created',
   'purchase_order.received',
   'invoice.overdue',
   'payment.received',
