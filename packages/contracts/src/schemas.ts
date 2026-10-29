@@ -136,7 +136,7 @@ export interface WebOrderTracking {
   createdAt: string;
   /** Primera vez que el pedido llegó a cada paso. */
   history: { step: WebOrderTrackingStep; at: string }[];
-  /** Total con IVA si corresponde. */
+  /** Total neto, sin IVA (como lo muestra la web). */
   total: number;
   lines: { sku: string; description: string; quantity: number }[];
 }

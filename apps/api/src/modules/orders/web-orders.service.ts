@@ -114,7 +114,6 @@ export class WebOrdersService {
             subtotal: pricing.subtotal,
             discountTotal: pricing.discountTotal,
             total: pricing.total,
-            withInvoice: true,
             taxTotal: orderTax(pricing.total, true).taxTotal,
             marginTotal: pricing.marginTotal,
             notes,
@@ -160,8 +159,6 @@ export class WebOrdersService {
             status: true,
             createdAt: true,
             total: true,
-            taxTotal: true,
-            withInvoice: true,
             contactPhone: true,
             customer: { select: { phone: true } },
             lines: {
@@ -189,7 +186,7 @@ export class WebOrdersService {
           detail: current.detail,
           createdAt: o.createdAt.toISOString(),
           history: [...reached].map(([step, at]) => ({ step: step as WebOrderTracking['step'], at: at.toISOString() })),
-          total: Number(o.total) + (o.withInvoice ? Number(o.taxTotal) : 0),
+          total: Number(o.total),
           lines: o.lines.map((l) => ({
             sku: l.variant.sku,
             description: `${l.variant.product.name} ${l.variant.name}`.trim(),
