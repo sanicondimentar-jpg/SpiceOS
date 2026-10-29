@@ -1,6 +1,9 @@
 import type { NextAuthOptions } from 'next-auth';
 import KeycloakProvider from 'next-auth/providers/keycloak';
 
+/** La sesión se cierra tras 2 horas sin uso (igual que la sesión del cliente spiceos-web en Keycloak). */
+const SESSION_IDLE_SECONDS = 2 * 60 * 60;
+
 /**
  * OIDC con Keycloak (PKCE + MFA configurados en el realm).
  * El access token vive 5 min; se renueva con el refresh token rotativo antes de vencer.
@@ -15,7 +18,7 @@ export const authOptions: NextAuthOptions = {
       checks: ['pkce', 'state'],
     }),
   ],
-  session: { strategy: 'jwt' },
+  session: { strategy: 'jwt', maxAge: SESSION_IDLE_SECONDS },
   callbacks: {
     async jwt({ token, account }) {
       if (account) {
@@ -36,22 +39,42 @@ export const authOptions: NextAuthOptions = {
   pages: { signIn: '/login' },
 };
 
+type Tokens = { accessToken: string; refreshToken: string; expiresAt: number };
+
+/**
+ * Cada consulta de la web pide la sesión, y al vencer el access token varias lo renuevan a la vez con el mismo
+ * refresh token. Keycloak acepta cada refresh token una sola vez: sin esto la segunda renovación fallaba y la
+ * sesión se cerraba a los pocos minutos. Las renovaciones con el mismo token comparten un único pedido.
+ */
+const refreshing = new Map<string, Promise<Tokens>>();
+
 async function refresh(token: Record<string, unknown>) {
+  const refreshToken = token.refreshToken as string;
+  let pending = refreshing.get(refreshToken);
+  if (!pending) {
+    pending = requestTokens(refreshToken);
+    refreshing.set(refreshToken, pending);
+    setTimeout(() => refreshing.delete(refreshToken), 60_000);
+  }
   try {
-    const res = await fetch(`${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: token.refreshToken as string,
-        client_id: process.env.KEYCLOAK_WEB_CLIENT_ID!,
-        client_secret: process.env.KEYCLOAK_WEB_CLIENT_SECRET!,
-      }),
-    });
-    const json = (await res.json()) as { access_token: string; refresh_token: string; expires_in: number };
-    if (!res.ok) throw json;
-    return { ...token, accessToken: json.access_token, refreshToken: json.refresh_token, expiresAt: Date.now() + json.expires_in * 1000 };
+    return { ...token, ...(await pending) };
   } catch {
     return { ...token, error: 'RefreshAccessTokenError' };
   }
+}
+
+async function requestTokens(refreshToken: string): Promise<Tokens> {
+  const res = await fetch(`${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: process.env.KEYCLOAK_WEB_CLIENT_ID!,
+      client_secret: process.env.KEYCLOAK_WEB_CLIENT_SECRET!,
+    }),
+  });
+  const json = (await res.json()) as { access_token: string; refresh_token: string; expires_in: number };
+  if (!res.ok) throw json;
+  return { accessToken: json.access_token, refreshToken: json.refresh_token, expiresAt: Date.now() + json.expires_in * 1000 };
 }

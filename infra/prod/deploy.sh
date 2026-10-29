@@ -117,6 +117,9 @@ kc update "clients/$CLIENT_ID" -r spiceos \
   -s "webOrigins=[\"https://$APP_DOMAIN\"]" \
   -s "secret=$(get_env KEYCLOAK_WEB_CLIENT_SECRET)"
 
+# Sesión de la web de 2 horas sin uso; el authenticator se pide la primera vez y después cada 7 días.
+python3 keycloak-login.py
+
 ORG_ALIAS=sani-condimentar
 ORG_ID=$(kc get organizations -r spiceos --fields id,alias --format csv --noquotes | awk -F, -v a="$ORG_ALIAS" '$2 == a { print $1 }')
 if [ -z "$ORG_ID" ]; then
