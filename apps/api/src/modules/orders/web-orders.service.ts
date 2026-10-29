@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { WebOrderInput } from '@spiceos/contracts';
+import type { WebOrderInput, WebOrderTracking, WebOrderTrackingInput } from '@spiceos/contracts';
 import { UnitOfWork } from '../../shared/unit-of-work';
 import { AggregateRoot } from '../../shared/domain/aggregate-root';
 import { DomainEvent } from '../../shared/domain/domain-event';
@@ -23,6 +23,22 @@ class OrderEvents extends AggregateRoot {
 /** Lista de precios de cada modo de la web. */
 const LIST_BY_MODE = { mayorista: 'Mayorista', minorista: 'Minorista' } as const;
 
+/** Cómo ve el cliente cada estado: en su idioma y sin los pasos internos. */
+const TRACKING_STEP: Record<string, { step: WebOrderTracking['step']; label: string; detail: string }> = {
+  PENDING_REVIEW: { step: 'received', label: 'Recibido', detail: 'Recibimos tu pedido y lo estamos revisando.' },
+  DRAFT: { step: 'received', label: 'Recibido', detail: 'Recibimos tu pedido y lo estamos revisando.' },
+  CONFIRMED: { step: 'confirmed', label: 'Confirmado', detail: 'Tu pedido está confirmado. Pronto empezamos a prepararlo.' },
+  PICKING: { step: 'preparing', label: 'En preparación', detail: 'Estamos armando tu pedido.' },
+  READY: { step: 'ready', label: 'Listo', detail: 'Tu pedido está listo para la entrega.' },
+  DISPATCHED: { step: 'shipped', label: 'En camino', detail: 'Tu pedido salió para la entrega.' },
+  DELIVERED: { step: 'delivered', label: 'Entregado', detail: 'Tu pedido fue entregado. ¡Gracias por tu compra!' },
+  INVOICED: { step: 'delivered', label: 'Entregado', detail: 'Tu pedido fue entregado. ¡Gracias por tu compra!' },
+  CANCELLED: { step: 'cancelled', label: 'Cancelado', detail: 'El pedido fue cancelado. Si tenés dudas, escribinos por WhatsApp.' },
+};
+
+/** Últimos 8 dígitos: alcanza para comparar teléfonos escritos con o sin 0, 15, +54 o 9. */
+const phoneKey = (phone: string | null | undefined) => (phone ?? '').replace(/\D/g, '').slice(-8);
+
 /**
  * Pedidos que llegan de la web pública (saboracasa.com.ar). Se guardan pendientes de revisión,
  * sin reservar stock: alguien de la empresa los aprueba, los corrige o los descarta.
@@ -39,22 +55,10 @@ export class WebOrdersService {
 
   async receive(orgAlias: string, input: WebOrderInput) {
     if (input.website) throw new BusinessRuleError('No se pudo registrar el pedido');
-    const company = await this.system.company.findUnique({ where: { keycloakOrgId: orgAlias }, select: { id: true, status: true } });
-    if (!company || company.status !== 'ACTIVE') throw new NotFoundError('Empresa', orgAlias);
+    const ctx = await this.context(orgAlias);
     const phone = normalizePhone(input.phone);
     if (!phone) throw new BusinessRuleError('Indicá un teléfono válido');
 
-    const ctx: RequestContext = {
-      tenantId: company.id,
-      userId: '00000000-0000-0000-0000-000000000000',
-      actor: 'integration:web',
-      actorType: 'INTEGRATION',
-      roleKey: 'system',
-      permissions: new Set(),
-      branchScope: [],
-      maxDiscount: 0,
-      correlationId: randomUUID(),
-    };
     return RequestContextStore.run(ctx, () =>
       this.uow.run(async (tx, scope) => {
         const branch =
@@ -110,7 +114,6 @@ export class WebOrdersService {
             subtotal: pricing.subtotal,
             discountTotal: pricing.discountTotal,
             total: pricing.total,
-            withInvoice: true,
             taxTotal: orderTax(pricing.total, true).taxTotal,
             marginTotal: pricing.marginTotal,
             notes,
@@ -139,4 +142,80 @@ export class WebOrdersService {
       }),
     );
   }
+
+  /**
+   * Seguimiento público: el cliente consulta con el número de pedido y su teléfono.
+   * Si el teléfono no coincide responde lo mismo que si el pedido no existiera.
+   */
+  async track(orgAlias: string, input: WebOrderTrackingInput): Promise<WebOrderTracking> {
+    const ctx = await this.context(orgAlias);
+    const numbers = [...new Set([input.number.trim().toUpperCase(), normalizeOrderNumber(input.number)])];
+    return RequestContextStore.run(ctx, () =>
+      this.uow.run(async (tx) => {
+        const o = await tx.salesOrder.findFirst({
+          where: { number: { in: numbers } },
+          select: {
+            number: true,
+            status: true,
+            createdAt: true,
+            total: true,
+            contactPhone: true,
+            customer: { select: { phone: true } },
+            lines: {
+              orderBy: { variant: { sku: 'asc' } },
+              select: { quantity: true, variant: { select: { sku: true, name: true, product: { select: { name: true } } } } },
+            },
+            statusHistory: { orderBy: { changedAt: 'asc' }, select: { to: true, changedAt: true } },
+          },
+        });
+        const key = phoneKey(input.phone);
+        const owns = o && key.length === 8 && [o.contactPhone, o.customer.phone].some((p) => phoneKey(p) === key);
+        if (!o || !owns) throw new NotFoundError('Pedido', input.number);
+
+        const current = TRACKING_STEP[o.status];
+        // Fecha en que llegó a cada paso que ve el cliente (la primera vez).
+        const reached = new Map<string, Date>();
+        for (const h of o.statusHistory) {
+          const step = TRACKING_STEP[h.to].step;
+          if (!reached.has(step)) reached.set(step, h.changedAt);
+        }
+        return {
+          number: o.number,
+          step: current.step,
+          label: current.label,
+          detail: current.detail,
+          createdAt: o.createdAt.toISOString(),
+          history: [...reached].map(([step, at]) => ({ step: step as WebOrderTracking['step'], at: at.toISOString() })),
+          total: Number(o.total),
+          lines: o.lines.map((l) => ({
+            sku: l.variant.sku,
+            description: `${l.variant.product.name} ${l.variant.name}`.trim(),
+            quantity: Number(l.quantity),
+          })),
+        };
+      }),
+    );
+  }
+
+  private async context(orgAlias: string): Promise<RequestContext> {
+    const company = await this.system.company.findUnique({ where: { keycloakOrgId: orgAlias }, select: { id: true, status: true } });
+    if (!company || company.status !== 'ACTIVE') throw new NotFoundError('Empresa', orgAlias);
+    return {
+      tenantId: company.id,
+      userId: '00000000-0000-0000-0000-000000000000',
+      actor: 'integration:web',
+      actorType: 'INTEGRATION',
+      roleKey: 'system',
+      permissions: new Set(),
+      branchScope: [],
+      maxDiscount: 0,
+      correlationId: randomUUID(),
+    };
+  }
+}
+
+/** Acepta "PED-00000012", "ped 12" o "12" y lo deja como se guarda: PED-00000012. */
+export function normalizeOrderNumber(raw: string) {
+  const digits = raw.replace(/\D/g, '');
+  return digits ? `PED-${digits.slice(-8).padStart(8, '0')}` : raw.trim().toUpperCase();
 }

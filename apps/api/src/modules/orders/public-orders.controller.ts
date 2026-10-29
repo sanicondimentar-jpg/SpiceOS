@@ -1,7 +1,7 @@
 import { Body, Controller, Header, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { webOrderSchema, type WebOrderInput } from '@spiceos/contracts';
+import { webOrderSchema, webOrderTrackingSchema, type WebOrderInput, type WebOrderTrackingInput } from '@spiceos/contracts';
 import { Public } from '../../shared/auth/decorators';
 import { ZodPipe } from '../../shared/http/zod-validation.pipe';
 import { WebOrdersService } from './web-orders.service';
@@ -20,5 +20,16 @@ export class PublicOrdersController {
   @Header('Cross-Origin-Resource-Policy', 'cross-origin')
   create(@Param('org') org: string, @Body(new ZodPipe(webOrderSchema)) body: WebOrderInput) {
     return this.webOrders.receive(org, body);
+  }
+
+  /** Seguimiento con número de pedido y teléfono. Va por POST para que el teléfono no quede en la URL ni en los logs. */
+  @Public()
+  @Post(':org/track')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 60, ttl: 3_600_000 } })
+  @Header('Cross-Origin-Resource-Policy', 'cross-origin')
+  @Header('Cache-Control', 'no-store')
+  track(@Param('org') org: string, @Body(new ZodPipe(webOrderTrackingSchema)) body: WebOrderTrackingInput) {
+    return this.webOrders.track(org, body);
   }
 }
