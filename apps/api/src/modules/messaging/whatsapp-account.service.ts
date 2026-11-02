@@ -61,6 +61,13 @@ export class WhatsappAccountService {
     } catch (e) {
       throw new BusinessRuleError(`Meta no aceptó el identificador del número o el token: ${(e as Error).message}`);
     }
+    if (input.pin) {
+      try {
+        await this.whatsapp.register(input.phoneNumberId, token, input.pin);
+      } catch (e) {
+        throw new BusinessRuleError(`Meta no dejó registrar el número: ${(e as Error).message}`);
+      }
+    }
     let subscribeError: string | null = null;
     try {
       await this.whatsapp.subscribeApp(input.wabaId, token);

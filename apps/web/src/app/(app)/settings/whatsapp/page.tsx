@@ -16,13 +16,13 @@ export default function WhatsappSettingsPage() {
   const { data, isLoading } = useWhatsappAccount();
   const save = useSaveWhatsappAccount();
   const a = data?.account;
-  const [v, setV] = useState({ phoneNumberId: '', wabaId: '', accessToken: '', appSecret: '', autoCreateCustomer: false });
+  const [v, setV] = useState({ phoneNumberId: '', wabaId: '', accessToken: '', appSecret: '', autoCreateCustomer: false, pin: '' });
   useEffect(() => {
     if (a) setV((x) => ({ ...x, phoneNumberId: a.phoneNumberId, wabaId: a.wabaId, autoCreateCustomer: a.autoCreateCustomer }));
   }, [a]);
 
   if (isLoading || !data) return <Skeleton className="mx-auto h-96 max-w-3xl" />;
-  const ready = /^\d{5,}$/.test(v.phoneNumberId) && /^\d{5,}$/.test(v.wabaId) && (!!a || (!!v.accessToken && !!v.appSecret));
+  const ready = (!v.pin || v.pin.length === 6) && /^\d{5,}$/.test(v.phoneNumberId) && /^\d{5,}$/.test(v.wabaId) && (!!a || (!!v.accessToken && !!v.appSecret));
   const subscribeError = save.data?.subscribeError;
 
   return (
@@ -62,6 +62,14 @@ export default function WhatsappSettingsPage() {
           <Field label="Clave secreta de la app (App secret)" htmlFor="w-secret" hint={a?.hasAppSecret ? 'Dejala vacía para mantener la que está guardada.' : undefined} className="sm:col-span-2">
             <Input id="w-secret" type="password" autoComplete="off" value={v.appSecret} onChange={(e) => setV({ ...v, appSecret: e.target.value })} />
           </Field>
+          <Field
+            label="PIN de verificación en dos pasos (6 dígitos)"
+            htmlFor="w-pin"
+            hint="Solo la primera vez: con esto se termina el alta del número. Elegí un PIN nuevo y guardalo; Meta lo pide si alguna vez se vuelve a registrar el número."
+            className="sm:col-span-2"
+          >
+            <Input id="w-pin" inputMode="numeric" maxLength={6} autoComplete="off" value={v.pin} onChange={(e) => setV({ ...v, pin: e.target.value.replace(/\D/g, '') })} />
+          </Field>
           <label className="flex items-start gap-2 text-sm sm:col-span-2">
             <input type="checkbox" className="mt-1" checked={v.autoCreateCustomer} onChange={(e) => setV({ ...v, autoCreateCustomer: e.target.checked })} />
             <span>
@@ -76,8 +84,8 @@ export default function WhatsappSettingsPage() {
               disabled={!ready || save.isPending}
               onClick={() =>
                 save.mutate(
-                  { ...v, accessToken: v.accessToken || undefined, appSecret: v.appSecret || undefined },
-                  { onSuccess: () => setV((x) => ({ ...x, accessToken: '', appSecret: '' })) },
+                  { ...v, accessToken: v.accessToken || undefined, appSecret: v.appSecret || undefined, pin: v.pin || undefined },
+                  { onSuccess: () => setV((x) => ({ ...x, accessToken: '', appSecret: '', pin: '' })) },
                 )
               }
             >
@@ -98,7 +106,7 @@ export default function WhatsappSettingsPage() {
             <CardTitle>2. Webhook en Meta</CardTitle>
             <p className="text-sm text-muted-foreground">
               En la app de Meta → WhatsApp → Configuración → Webhook → Editar, pegá estos dos datos, tocá «Verificar y guardar» y después
-              suscribite a los campos <b>messages</b> y <b>smb_message_echoes</b> (este último trae lo que respondés desde el celular).
+              suscribite al campo <b>messages</b>.
             </p>
           </CardHeader>
           <CardContent className="space-y-3">

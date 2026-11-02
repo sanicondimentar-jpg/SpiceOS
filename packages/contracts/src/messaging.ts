@@ -8,6 +8,8 @@ export const whatsappAccountSchema = z.object({
   accessToken: z.string().trim().max(1000).optional(),
   appSecret: z.string().trim().max(200).optional(),
   autoCreateCustomer: z.boolean().default(false),
+  /** PIN de verificación en dos pasos: si viene, se registra el número en la Cloud API (alta inicial). */
+  pin: z.string().trim().regex(/^\d{6}$/, 'El PIN son 6 dígitos').optional(),
 });
 export type WhatsappAccountInput = z.infer<typeof whatsappAccountSchema>;
 

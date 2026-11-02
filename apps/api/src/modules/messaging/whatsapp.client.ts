@@ -58,8 +58,17 @@ export class WhatsappClient {
     await this.graph(`${wabaId}/subscribed_apps`, token, 'POST');
   }
 
-  private async graph<T>(path: string, token: string, method = 'GET'): Promise<T> {
-    const res = await fetch(`${this.base()}/${path}`, { method, headers: { Authorization: `Bearer ${token}` } });
+  /** Alta del número en la Cloud API (una sola vez); el PIN queda como verificación en dos pasos. */
+  async register(phoneNumberId: string, token: string, pin: string): Promise<void> {
+    await this.graph(`${phoneNumberId}/register`, token, 'POST', { messaging_product: 'whatsapp', pin });
+  }
+
+  private async graph<T>(path: string, token: string, method = 'GET', body?: unknown): Promise<T> {
+    const res = await fetch(`${this.base()}/${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, ...(body !== undefined && { 'Content-Type': 'application/json' }) },
+      ...(body !== undefined && { body: JSON.stringify(body) }),
+    });
     const json = (await res.json().catch(() => ({}))) as T & { error?: { message: string } };
     if (!res.ok) throw new Error(json.error?.message ?? `Error ${res.status}`);
     return json;
