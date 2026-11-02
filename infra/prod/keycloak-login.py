@@ -91,8 +91,7 @@ def main():
 
     client = kc("get", "clients", "-q", f"clientId={CLIENT}")[0]
     kc("update", f"clients/{client['id']}",
-       "-s", f'attributes."client.session.idle.timeout"={APP_IDLE}',
-       "-s", 'attributes."default.acr.values"=2')
+       "-s", f'attributes."client.session.idle.timeout"={APP_IDLE}')
 
     if not any(f["alias"] == FLOW for f in kc("get", "authentication/flows")):
         kc("create", "authentication/flows", body={
@@ -103,6 +102,8 @@ def main():
         ensure_step(*step)
 
     kc("update", f"realms/{REALM}", "-s", f"browserFlow={FLOW}")
+    # Keycloak solo acepta el nivel por defecto si existe en el flujo asociado al realm: va después.
+    kc("update", f"clients/{client['id']}", "-s", 'attributes."default.acr.values"=2')
     print(f"Keycloak: sesión de la web {APP_IDLE // 3600} h sin uso, contraseña cada {PASSWORD_MAX_AGE // 3600} h, "
           f"authenticator cada {OTP_MAX_AGE // 86400} días")
 
