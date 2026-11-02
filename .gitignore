@@ -6,3 +6,4 @@ coverage
 .env
 *.log
 *.tsbuildinfo
+__pycache__/
