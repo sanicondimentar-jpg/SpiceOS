@@ -117,7 +117,7 @@ kc update "clients/$CLIENT_ID" -r spiceos \
   -s "webOrigins=[\"https://$APP_DOMAIN\"]" \
   -s "secret=$(get_env KEYCLOAK_WEB_CLIENT_SECRET)"
 
-# Sesión de la web de 2 horas sin uso; el authenticator se pide la primera vez y después cada 7 días.
+# Sesión de la web de 2 horas sin uso; contraseña en cada ingreso y authenticator la primera vez y después cada 7 días.
 python3 keycloak-login.py
 
 ORG_ALIAS=sani-condimentar

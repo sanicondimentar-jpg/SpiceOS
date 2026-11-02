@@ -1,6 +1,7 @@
 'use client';
 
-import { Bell, Menu, Search, Sparkles } from 'lucide-react';
+import { Bell, LogOut, Menu, Search, Sparkles } from 'lucide-react';
+import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { useMe } from '@/lib/hooks';
 
@@ -31,6 +32,9 @@ export function Topbar({ onCopilot, onMenu }: { onCopilot: () => void; onMenu: (
       <div className="grid h-8 w-8 place-items-center rounded-full bg-muted text-xs font-semibold" title={me?.user.fullName}>
         {me?.user.fullName?.slice(0, 2).toUpperCase() ?? '··'}
       </div>
+      <Button variant="ghost" size="icon" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={() => void signOut({ callbackUrl: '/login' })}>
+        <LogOut className="h-4 w-4" />
+      </Button>
     </header>
   );
 }
