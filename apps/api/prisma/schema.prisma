@@ -1409,6 +1409,10 @@ model WhatsappAccount {
   encryptedToken     Bytes   @map("encrypted_token")
   branchId           String? @map("branch_id") @db.Uuid
   autoCreateCustomer Boolean @default(true) @map("auto_create_customer")
+  verifyToken        String? @unique @map("verify_token") // lo pide Meta al registrar el webhook
+  encryptedAppSecret Bytes?  @map("encrypted_app_secret") // firma X-Hub-Signature-256
+  verifiedName       String? @map("verified_name") // nombre del negocio según Meta
+  connectedAt        DateTime? @map("connected_at") @db.Timestamptz
 
   conversations Conversation[]
 
@@ -1429,6 +1433,7 @@ model Conversation {
   windowExpiresAt DateTime? @map("window_expires_at") @db.Timestamptz // ventana de 24 h de Meta
   summary      String?
   sentiment    String?
+  unreadCount  Int       @default(0) @map("unread_count")
 
   account  WhatsappAccount @relation(fields: [accountId], references: [id])
   customer Customer?       @relation(fields: [customerId], references: [id])
@@ -1453,6 +1458,7 @@ model Message {
   intentScore    Float?           @map("intent_score")
   status         String           @default("RECEIVED") // SENT, DELIVERED, READ, FAILED
   sentBy         String?          @map("sent_by") // user id o agent:*
+  error          String? // motivo si Meta no lo pudo entregar
   sentAt         DateTime         @map("sent_at") @db.Timestamptz
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

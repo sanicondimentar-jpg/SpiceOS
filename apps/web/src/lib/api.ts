@@ -28,6 +28,11 @@ export async function download(path: string, filename: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+/** Archivo protegido (foto o audio de WhatsApp) como blob, para mostrarlo con URL.createObjectURL. */
+export async function fetchBlob(path: string): Promise<Blob> {
+  return (await request(path)).blob();
+}
+
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const session = (await getSession()) as { accessToken?: string; error?: string } | null;
   if (session?.error === 'RefreshAccessTokenError') sessionExpired();

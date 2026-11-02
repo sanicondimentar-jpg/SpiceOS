@@ -3,14 +3,12 @@ import { Card, CardContent } from '@/components/ui/card';
 
 // Módulos del roadmap que todavía no tienen pantalla: indica en qué sprint llegan.
 const ROADMAP: Record<string, { title: string; sprint: string }> = {
-  inbox: { title: 'WhatsApp', sprint: 'Sprint 3' },
   sales: { title: 'Ventas y embudo', sprint: 'Sprint 2' },
   logistics: { title: 'Logística', sprint: 'Fase 2' },
   receivables: { title: 'Cobranza', sprint: 'Sprint 3' },
   documents: { title: 'Documentos', sprint: 'Sprint 4' },
   automation: { title: 'Automatizaciones', sprint: 'Sprint 5' },
   analytics: { title: 'Inteligencia comercial', sprint: 'Sprint 5' },
-  settings: { title: 'Configuración', sprint: 'Sprint 0' },
 };
 
 export default async function ModulePage({ params }: { params: Promise<{ module: string }> }) {
