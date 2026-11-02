@@ -3,10 +3,10 @@
 
 - La sesión de la web se cierra tras 2 horas sin uso (sesión del cliente spiceos-web en Keycloak).
 - El inicio de sesión usa niveles de autenticación (LoA) de Keycloak:
-    nivel 1, contraseña: se vuelve a pedir si pasaron más de 2 horas desde que se ingresó.
-    nivel 2, código del authenticator: se pide la primera vez y después cada 7 días.
-  El cliente spiceos-web pide siempre el nivel 2, así que cada ingreso pasa por los dos niveles
-  y Keycloak saltea los que siguen vigentes en la sesión del navegador.
+    nivel 2, contraseña: vigencia 0, así que se pide en cada ingreso (también después de cerrar sesión).
+    nivel 1, código del authenticator: se pide la primera vez y después cada 7 días.
+  El cliente spiceos-web pide siempre el nivel 2. La contraseña es el nivel alto a propósito: como su
+  vigencia es 0 nunca queda guardada, y la cookie de Keycloak sola no alcanza para entrar.
 - Para que el navegador recuerde esa sesión, la sesión de Keycloak dura 7 días ("Recordarme" activado).
 """
 import json
@@ -17,7 +17,7 @@ REALM = "spiceos"
 CLIENT = "spiceos-web"
 FLOW = "spiceos-navegador"
 APP_IDLE = 2 * 3600
-PASSWORD_MAX_AGE = 2 * 3600
+PASSWORD_MAX_AGE = 0
 OTP_MAX_AGE = 7 * 24 * 3600
 SSO_SESSION = 7 * 24 * 3600
 
@@ -26,10 +26,10 @@ STEPS = [
     (FLOW, {"provider": "auth-cookie"}, "ALTERNATIVE", None),
     (FLOW, {"flow": f"{FLOW}-ingreso"}, "ALTERNATIVE", None),
     (f"{FLOW}-ingreso", {"flow": f"{FLOW}-contrasena"}, "CONDITIONAL", None),
-    (f"{FLOW}-contrasena", {"provider": "conditional-level-of-authentication"}, "REQUIRED", (1, PASSWORD_MAX_AGE)),
+    (f"{FLOW}-contrasena", {"provider": "conditional-level-of-authentication"}, "REQUIRED", (2, PASSWORD_MAX_AGE)),
     (f"{FLOW}-contrasena", {"provider": "auth-username-password-form"}, "REQUIRED", None),
     (f"{FLOW}-ingreso", {"flow": f"{FLOW}-authenticator"}, "CONDITIONAL", None),
-    (f"{FLOW}-authenticator", {"provider": "conditional-level-of-authentication"}, "REQUIRED", (2, OTP_MAX_AGE)),
+    (f"{FLOW}-authenticator", {"provider": "conditional-level-of-authentication"}, "REQUIRED", (1, OTP_MAX_AGE)),
     (f"{FLOW}-authenticator", {"provider": "auth-otp-form"}, "REQUIRED", None),
 ]
 
@@ -73,14 +73,13 @@ def ensure_step(parent, step, requirement, loa):
         kc("update", f"authentication/flows/{parent}/executions", body={**execution, "requirement": requirement})
     if loa:
         level, max_age = loa
-        config = {"loa-condition-level": str(level), "loa-max-age": str(max_age)}
+        alias, config = f"{parent}-nivel-{level}", {"loa-condition-level": str(level), "loa-max-age": str(max_age)}
         if execution.get("authenticationConfig"):
             current = kc("get", f"authentication/config/{execution['authenticationConfig']}")
-            if current.get("config") != config:
-                kc("update", f"authentication/config/{current['id']}", body={**current, "config": config})
+            if current.get("config") != config or current.get("alias") != alias:
+                kc("update", f"authentication/config/{current['id']}", body={**current, "alias": alias, "config": config})
         else:
-            kc("create", f"authentication/executions/{execution['id']}/config",
-               body={"alias": f"{parent}-nivel-{level}", "config": config})
+            kc("create", f"authentication/executions/{execution['id']}/config", body={"alias": alias, "config": config})
 
 
 def main():
@@ -96,7 +95,7 @@ def main():
     if not any(f["alias"] == FLOW for f in kc("get", "authentication/flows")):
         kc("create", "authentication/flows", body={
             "alias": FLOW, "providerId": "basic-flow", "topLevel": True, "builtIn": False,
-            "description": "Contraseña cada 2 horas y authenticator cada 7 días",
+            "description": "Contraseña en cada ingreso y authenticator cada 7 días",
         })
     for step in STEPS:
         ensure_step(*step)
@@ -104,7 +103,7 @@ def main():
     kc("update", f"realms/{REALM}", "-s", f"browserFlow={FLOW}")
     # Keycloak solo acepta el nivel por defecto si existe en el flujo asociado al realm: va después.
     kc("update", f"clients/{client['id']}", "-s", 'attributes."default.acr.values"=2')
-    print(f"Keycloak: sesión de la web {APP_IDLE // 3600} h sin uso, contraseña cada {PASSWORD_MAX_AGE // 3600} h, "
+    print(f"Keycloak: sesión de la web {APP_IDLE // 3600} h sin uso, contraseña en cada ingreso, "
           f"authenticator cada {OTP_MAX_AGE // 86400} días")
 
 
