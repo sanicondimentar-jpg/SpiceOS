@@ -44,6 +44,36 @@ export class WhatsappClient {
     return { data: Buffer.from(await file.arrayBuffer()), mimeType: meta.mime_type };
   }
 
+  /** Comprueba el número y el token: devuelve el número visible y el nombre verificado del negocio. */
+  async phoneInfo(phoneNumberId: string, token: string): Promise<{ displayPhone: string; verifiedName: string | null }> {
+    const json = await this.graph<{ display_phone_number: string; verified_name?: string }>(
+      `${phoneNumberId}?fields=display_phone_number,verified_name`,
+      token,
+    );
+    return { displayPhone: json.display_phone_number, verifiedName: json.verified_name ?? null };
+  }
+
+  /** Suscribe la app a la cuenta (WABA) para que Meta mande los mensajes al webhook. */
+  async subscribeApp(wabaId: string, token: string): Promise<void> {
+    await this.graph(`${wabaId}/subscribed_apps`, token, 'POST');
+  }
+
+  /** Alta del número en la Cloud API (una sola vez); el PIN queda como verificación en dos pasos. */
+  async register(phoneNumberId: string, token: string, pin: string): Promise<void> {
+    await this.graph(`${phoneNumberId}/register`, token, 'POST', { messaging_product: 'whatsapp', pin });
+  }
+
+  private async graph<T>(path: string, token: string, method = 'GET', body?: unknown): Promise<T> {
+    const res = await fetch(`${this.base()}/${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, ...(body !== undefined && { 'Content-Type': 'application/json' }) },
+      ...(body !== undefined && { body: JSON.stringify(body) }),
+    });
+    const json = (await res.json().catch(() => ({}))) as T & { error?: { message: string } };
+    if (!res.ok) throw new Error(json.error?.message ?? `Error ${res.status}`);
+    return json;
+  }
+
   private async send(account: AccountCredentials, payload: unknown): Promise<string> {
     const res = await fetch(`${this.base()}/${account.phoneNumberId}/messages`, {
       method: 'POST',

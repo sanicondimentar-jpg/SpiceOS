@@ -3,15 +3,13 @@ import { z } from 'zod';
 import { PERMISSIONS } from '@spiceos/contracts';
 import { AiTool } from '../../shared/ai/ai-tool.decorator';
 import { UnitOfWork } from '../../shared/unit-of-work';
-import { BusinessRuleError } from '../../shared/domain/errors';
-import { RequestContextStore } from '../../shared/tenancy/request-context';
-import { WhatsappClient } from './whatsapp.client';
+import { ConversationsService } from './conversations.service';
 
 @Injectable()
 export class MessagingAiTools {
   constructor(
     private readonly uow: UnitOfWork,
-    private readonly whatsapp: WhatsappClient,
+    private readonly conversations: ConversationsService,
   ) {}
 
   @AiTool({
@@ -51,30 +49,7 @@ export class MessagingAiTools {
     agents: ['commercial', 'collections'],
   })
   async send({ conversationId, text }: { conversationId: string; text: string }) {
-    const ctx = RequestContextStore.get();
-    const conv = await this.uow.read((tx) =>
-      tx.conversation.findUniqueOrThrow({ where: { id: conversationId }, include: { account: true } }),
-    );
-    if (!conv.windowExpiresAt || conv.windowExpiresAt < new Date()) {
-      throw new BusinessRuleError('La ventana de 24 h está cerrada: hay que usar una plantilla aprobada');
-    }
-    const waId = await this.whatsapp.sendText(conv.account, conv.waContactId, text);
-    await this.uow.run(async (tx, scope) => {
-      const m = await tx.message.create({
-        data: {
-          tenantId: ctx.tenantId,
-          conversationId,
-          waMessageId: waId,
-          direction: 'OUTBOUND',
-          type: 'text',
-          body: text,
-          status: 'SENT',
-          sentBy: ctx.actor,
-          sentAt: new Date(),
-        },
-      });
-      scope.auditLog({ action: 'message.send', entityType: 'conversation', entityId: conversationId, after: { messageId: m.id } });
-    });
-    return { sent: true, waMessageId: waId };
+    const r = await this.conversations.send(conversationId, text);
+    return { sent: true, waMessageId: r.waMessageId };
   }
 }
