@@ -121,7 +121,10 @@ function Chat({ id, onBack }: { id: string; onBack: () => void }) {
   const canSend = !!me?.permissions.includes('messaging.message.send');
   const bottom = useRef<HTMLDivElement>(null);
   const last = c?.messages.at(-1)?.id;
-  useEffect(() => bottom.current?.scrollIntoView({ block: 'end' }), [last, id]);
+  // Con llaves: en Chrome nuevo scrollIntoView devuelve una promesa, y React la tomaría como limpieza y se rompe.
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ block: 'end' });
+  }, [last, id]);
 
   if (error) return <p className="p-6 text-sm text-destructive">{error.message}</p>;
   if (isLoading || !c) return <Skeleton className="m-6 h-96" />;
