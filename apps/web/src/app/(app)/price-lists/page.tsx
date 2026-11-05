@@ -50,7 +50,9 @@ function ItemsTable({ listId, canWrite, canSeeCost }: { listId: string; canWrite
   const [q, setQ] = useState('');
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<string[]>([]);
-  useEffect(() => setEdits({}), [listId]);
+  useEffect(() => {
+    setEdits({});
+  }, [listId]);
   const key = (variantId: string, minQuantity: number) => `${variantId}:${minQuantity}`;
   const rows = useMemo(
     () => data?.items.filter((i) => !q || `${i.sku} ${i.name}`.toLowerCase().includes(q.toLowerCase())) ?? [],

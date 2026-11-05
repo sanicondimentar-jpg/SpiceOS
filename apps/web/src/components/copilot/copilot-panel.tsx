@@ -53,7 +53,9 @@ export function CopilotPanel({ open, onClose }: { open: boolean; onClose: () => 
   const confirm = useConfirmToolCall();
   const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), [turns.length, copilot.isPending]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [turns.length, copilot.isPending]);
 
   const send = async (text: string) => {
     if (!text.trim()) return;
