@@ -1,5 +1,6 @@
 'use client';
 
+import { FileDown } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { download } from '@/lib/api';
 import { usePriceListItems, usePriceLists, useReprice, useUpsertPrices, type RepriceChange } from '@/lib/catalog';
 import { optNumber } from '@/lib/form';
 import { useMe } from '@/lib/hooks';
@@ -24,7 +26,10 @@ export default function PriceListsPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
-      <h1 className="text-2xl font-semibold">Listas de precios</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-semibold">Listas de precios</h1>
+        <DownloadPdfButton />
+      </div>
       <div role="tablist" aria-label="Listas de precios" className="flex flex-wrap gap-2">
         {lists?.map((l) => (
           <button
@@ -204,5 +209,32 @@ function RepricePanel({ listId }: { listId: string }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** Lista mayorista en PDF (con los sueltos de la minorista), armada por la API con los precios vigentes. */
+function DownloadPdfButton() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  async function onClick() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
+      await download('/catalog/price-list.pdf', `lista-de-precios-sabor-a-casa-${today}.pdf`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo generar el PDF');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="flex items-center gap-2">
+      {error && <span className="text-sm text-destructive">{error}</span>}
+      <Button variant="outline" onClick={onClick} disabled={busy}>
+        <FileDown className="mr-2 h-4 w-4" />
+        {busy ? 'Generando…' : 'Descargar PDF'}
+      </Button>
+    </div>
   );
 }
