@@ -117,11 +117,17 @@ export function buildSections(wholesale: PriceRow[], retail: PriceRow[]): PdfSec
     if (p.kind !== 'loose') continue; // De la lista minorista solo van los sueltos.
     loose.push({ ...base(r), sortWeight: (r.netWeightKg ?? 0) * 1000 + (p.fromBox ?? 0) / 1000, presentation: p.presentation, unitsPerBox: null, boxPrice: null, unitPrice: r.price, fromBox: p.fromBox });
   }
-  // Un mismo suelto que sale de cajas distintas (por ejemplo de la caja de 25 y de la de 50) se distingue por la caja.
+  // Un mismo suelto puede salir de cajas distintas (por ejemplo de la de 25 y de la de 50): si tiene el mismo
+  // precio va una sola vez; si los precios difieren, se distingue por la caja.
   const key = (l: PdfLine) => `${l.product}|${l.presentation}`;
-  const counts = new Map<string, number>();
-  for (const l of loose) counts.set(key(l), (counts.get(key(l)) ?? 0) + 1);
-  for (const l of loose) if ((counts.get(key(l)) ?? 0) > 1 && l.fromBox) l.presentation += ` (de caja x${l.fromBox})`;
+  const seen = new Map<string, PdfLine[]>();
+  for (const l of loose) seen.set(key(l), [...(seen.get(key(l)) ?? []), l]);
+  loose.length = 0;
+  for (const group of seen.values()) {
+    const prices = new Set(group.map((l) => l.unitPrice));
+    if (prices.size === 1) loose.push(group[0]);
+    else for (const l of group) loose.push({ ...l, presentation: l.fromBox ? `${l.presentation} (de caja x${l.fromBox})` : l.presentation });
+  }
 
   const sections: PdfSection[] = [];
   if (bulk.length) sections.push({ title: 'Granel', lines: bulk.sort(byName) });

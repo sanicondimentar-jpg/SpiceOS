@@ -30,7 +30,12 @@ describe('lista de precios en PDF', () => {
     expect(sections[3].lines).toHaveLength(1); // de la lista minorista solo los sueltos
   });
 
-  it('distingue un mismo suelto que sale de cajas distintas', () => {
+  it('muestra una sola vez un suelto que sale de cajas distintas con el mismo precio', () => {
+    const [loose] = buildSections([], [row('22-U', 'Pimentón', 'Sobre suelto 25 g (caja de 25)', 900), row('20-U', 'Pimentón', 'Sobre suelto 25 g (caja de 50)', 900)]);
+    expect(loose.lines.map((l) => [l.sku, l.presentation])).toEqual([['22-U', 'Sobre 25 g']]);
+  });
+
+  it('distingue un mismo suelto que sale de cajas distintas con precios distintos', () => {
     const [loose] = buildSections([], [row('22-U', 'Pimentón', 'Sobre suelto 25 g (caja de 25)', 900), row('20-U', 'Pimentón', 'Sobre suelto 25 g (caja de 50)', 800)]);
     expect(loose.lines.map((l) => l.presentation)).toEqual(['Sobre 25 g (de caja x25)', 'Sobre 25 g (de caja x50)']);
   });
