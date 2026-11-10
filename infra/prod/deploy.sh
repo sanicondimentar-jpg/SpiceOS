@@ -162,5 +162,12 @@ for i in $(seq 1 30); do
   fi
   sleep 10
 done
-echo "La API no respondió en https://$APP_DOMAIN/api/v1/health. Revisar: docker compose logs api caddy"
+echo "La API no respondió en https://$APP_DOMAIN/api/v1/health."
+log "Estado de los contenedores"
+dc ps -a || true
+log "Últimas líneas de la API"
+dc logs --tail 80 api || true
+log "Últimas líneas de Caddy"
+dc logs --tail 30 caddy || true
+free -m || true
 exit 1
