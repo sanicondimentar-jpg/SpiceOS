@@ -8,6 +8,11 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      solo_diagnostico:
+        description: 'Solo mostrar estado y logs del servidor (no despliega nada)'
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-production
@@ -36,7 +41,20 @@ jobs:
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -T 15 "$SSH_HOST" >> ~/.ssh/known_hosts
 
+      # Diagnóstico de solo lectura: estado de los contenedores, logs recientes, memoria y disco.
+      - name: Diagnóstico
+        if: inputs.solo_diagnostico
+        run: |
+          ssh "root@${{ vars.SSH_HOST }}" 'cd /opt/spiceos/infra/prod && set -x
+            docker compose ps -a
+            docker compose logs --tail 150 api
+            docker compose logs --tail 40 web
+            docker compose logs --tail 40 caddy
+            free -m; df -h /; uptime
+            curl -sS -m 10 -o /dev/null -w "health %{http_code}\n" http://localhost/api/v1/health -H "Host: ${{ vars.APP_DOMAIN }}" || true'
+
       - name: Copiar configuración
+        if: ${{ !inputs.solo_diagnostico }}
         run: |
           ssh "root@${{ vars.SSH_HOST }}" 'mkdir -p /opt/spiceos/infra/compose /opt/spiceos/infra/keycloak'
           rsync -a infra/prod/ "root@${{ vars.SSH_HOST }}:/opt/spiceos/infra/prod/" --exclude .env --exclude backups
@@ -45,6 +63,7 @@ jobs:
 
       # Los secretos viajan por stdin, no en la línea de comandos del servidor.
       - name: Desplegar
+        if: ${{ !inputs.solo_diagnostico }}
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_TAG: ${{ env.SHA }}
