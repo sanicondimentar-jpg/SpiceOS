@@ -12,7 +12,7 @@ export const BRAND = {
   whatsapp: '+54 9 11 7058-0234',
   email: 'sanicondimentar@gmail.com',
   web: 'www.saboracasa.com.ar',
-  conditions: ['Forma de pago: a convenir', 'Zona de cobertura: Zona Norte', 'Precios sujetos a cambio sin previo aviso'],
+  conditions: ['Forma de pago: a convenir', 'Zona de cobertura: GBA Norte y alrededores', 'Pedido mínimo $50.000', 'Precios sujetos a cambio sin previo aviso'],
 };
 
 const COLORS = {
@@ -168,6 +168,9 @@ function logoSvg(size: number): string {
 </svg>`;
 }
 
+const chunk = <T>(items: T[], size: number): T[][] =>
+  Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, i * size + size));
+
 const PAGE_WIDTH = 595.28; // A4 en puntos
 const MARGIN_X = 36;
 const HEADER_HEIGHT = 92;
@@ -223,7 +226,7 @@ export function buildPriceListDoc(sections: PdfSection[], date: Date): TDocument
   return {
     pageSize: 'A4',
     pageOrientation: 'portrait',
-    pageMargins: [MARGIN_X, HEADER_HEIGHT + 14, MARGIN_X, 58],
+    pageMargins: [MARGIN_X, HEADER_HEIGHT + 14, MARGIN_X, 62],
     info: { title: `Lista de precios mayorista - ${BRAND.name}`, author: BRAND.name, subject: `Precios vigentes al ${formatDate(date)}` },
     defaultStyle: { font: 'Helvetica', fontSize: 8.5, color: COLORS.text },
     styles: {
@@ -273,7 +276,8 @@ export function buildPriceListDoc(sections: PdfSection[], date: Date): TDocument
             {
               width: '*',
               stack: [
-                { text: BRAND.conditions.join('  ·  '), fontSize: 7.5, color: COLORS.text },
+                // De a tres condiciones por renglón, para que no se corten.
+                ...chunk(BRAND.conditions, 3).map((line, i) => ({ text: line.join('  ·  '), fontSize: 7.5, color: COLORS.text, margin: [0, i ? 2 : 0, 0, 0] as [number, number, number, number] })),
                 { text: [`WhatsApp ${BRAND.whatsapp}`, BRAND.email, BRAND.web].join('  ·  '), fontSize: 7.5, bold: true, color: COLORS.bordo, margin: [0, 3, 0, 0] },
               ],
             },
