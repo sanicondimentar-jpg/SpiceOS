@@ -8,6 +8,15 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      solo_diagnostico:
+        description: 'Solo mostrar estado y logs del servidor (no despliega nada)'
+        type: boolean
+        default: false
+      reiniciar_api:
+        description: 'Solo reiniciar API, worker y scheduler con la versión actual (no despliega nada nuevo)'
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-production
@@ -36,7 +45,31 @@ jobs:
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -T 15 "$SSH_HOST" >> ~/.ssh/known_hosts
 
+      # Diagnóstico de solo lectura: estado de los contenedores, logs recientes, memoria y disco.
+      - name: Diagnóstico
+        if: inputs.solo_diagnostico
+        run: |
+          ssh "root@${{ vars.SSH_HOST }}" 'cd /opt/spiceos/infra/prod && set -x
+            docker compose ps -a
+            docker compose logs --tail 150 api
+            docker compose logs --tail 40 web
+            docker compose logs --tail 40 caddy
+            free -m; df -h /; uptime
+            curl -sS -m 10 -o /dev/null -w "health %{http_code}\n" http://localhost/api/v1/health -H "Host: ${{ vars.APP_DOMAIN }}" || true'
+
+      # Reinicio de la app con la misma versión, para cuando la API quedó colgada.
+      - name: Reiniciar API
+        if: inputs.reiniciar_api && !inputs.solo_diagnostico
+        run: |
+          ssh "root@${{ vars.SSH_HOST }}" 'cd /opt/spiceos/infra/prod && docker compose restart api worker scheduler
+            for i in $(seq 1 30); do
+              if curl -fsS "https://${{ vars.APP_DOMAIN }}/api/v1/health" >/dev/null 2>&1; then echo "API OK"; exit 0; fi
+              sleep 5
+            done
+            docker compose ps -a; docker compose logs --tail 100 api; exit 1'
+
       - name: Copiar configuración
+        if: ${{ !inputs.solo_diagnostico && !inputs.reiniciar_api }}
         run: |
           ssh "root@${{ vars.SSH_HOST }}" 'mkdir -p /opt/spiceos/infra/compose /opt/spiceos/infra/keycloak'
           rsync -a infra/prod/ "root@${{ vars.SSH_HOST }}:/opt/spiceos/infra/prod/" --exclude .env --exclude backups
@@ -45,6 +78,7 @@ jobs:
 
       # Los secretos viajan por stdin, no en la línea de comandos del servidor.
       - name: Desplegar
+        if: ${{ !inputs.solo_diagnostico && !inputs.reiniciar_api }}
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_TAG: ${{ env.SHA }}
