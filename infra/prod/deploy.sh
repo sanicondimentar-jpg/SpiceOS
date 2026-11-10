@@ -154,14 +154,19 @@ dc up -d --remove-orphans api worker scheduler web caddy backup
 # rsync reemplaza el Caddyfile por un archivo nuevo y el contenedor sigue viendo el viejo: hay que reiniciarlo.
 dc restart caddy
 
-for i in $(seq 1 30); do
-  if curl -fsS "https://$APP_DOMAIN/api/v1/health" >/dev/null 2>&1; then
-    log "Listo: https://$APP_DOMAIN"
-    docker image prune -f >/dev/null
-    exit 0
-  fi
-  sleep 10
-done
+healthy() {
+  for i in $(seq 1 "$1"); do
+    curl -fsS "https://$APP_DOMAIN/api/v1/health" >/dev/null 2>&1 && return 0
+    sleep 10
+  done
+  return 1
+}
+# Si la versión no cambió, compose no reinicia la API; si quedó colgada (pasó el 5/11), se reinicia una vez.
+if healthy 30 || { log "La API no responde: reiniciando api, worker y scheduler"; dc restart api worker scheduler; healthy 18; }; then
+  log "Listo: https://$APP_DOMAIN"
+  docker image prune -f >/dev/null
+  exit 0
+fi
 echo "La API no respondió en https://$APP_DOMAIN/api/v1/health."
 log "Estado de los contenedores"
 dc ps -a || true
