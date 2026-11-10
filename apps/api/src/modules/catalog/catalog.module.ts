@@ -4,13 +4,14 @@ import { CatalogAiTools } from './catalog.tools';
 import { CatalogController } from './catalog.controller';
 import { PublicCatalogController } from './public-catalog.controller';
 import { CertificationsService } from './application/certifications.service';
+import { PriceListPdfService } from './application/price-list-pdf.service';
 import { PriceListsService } from './application/price-lists.service';
 import { ProductsService } from './application/products.service';
 import { PublicCatalogService } from './application/public-catalog.service';
 
 @Module({
   controllers: [CatalogController, PublicCatalogController],
-  providers: [CatalogFacade, CatalogAiTools, ProductsService, PriceListsService, CertificationsService, PublicCatalogService],
+  providers: [CatalogFacade, CatalogAiTools, ProductsService, PriceListsService, CertificationsService, PublicCatalogService, PriceListPdfService],
   exports: [CatalogFacade, ProductsService, PriceListsService],
 })
 export class CatalogModule {}

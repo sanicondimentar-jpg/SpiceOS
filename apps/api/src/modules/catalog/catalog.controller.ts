@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   PERMISSIONS,
@@ -30,6 +31,7 @@ import {
 import { RequirePermissions } from '../../shared/auth/decorators';
 import { ZodPipe } from '../../shared/http/zod-validation.pipe';
 import { CertificationsService } from './application/certifications.service';
+import { PriceListPdfService } from './application/price-list-pdf.service';
 import { PriceListsService } from './application/price-lists.service';
 import { ProductsService } from './application/products.service';
 
@@ -41,7 +43,16 @@ export class CatalogController {
     private readonly products: ProductsService,
     private readonly priceLists: PriceListsService,
     private readonly certifications: CertificationsService,
+    private readonly priceListPdf: PriceListPdfService,
   ) {}
+
+  /** Lista de precios mayorista en PDF con los precios vigentes (sin costos). */
+  @Get('price-list.pdf')
+  @RequirePermissions(PERMISSIONS.catalog.read)
+  async downloadPriceListPdf(@Res() res: Response) {
+    const { filename, buffer } = await this.priceListPdf.forCurrentCompany();
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${filename}"` }).send(buffer);
+  }
 
   // ---------- Productos y presentaciones ----------
   @Get('products')
