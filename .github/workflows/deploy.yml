@@ -17,6 +17,19 @@ on:
         description: 'Solo reiniciar API, worker y scheduler con la versión actual (no despliega nada nuevo)'
         type: boolean
         default: false
+      usuario_email:
+        description: 'Crear usuario: email (si se completa, solo crea el usuario y no despliega nada)'
+        type: string
+        default: ''
+      usuario_nombre:
+        description: 'Crear usuario: nombre y apellido'
+        type: string
+        default: ''
+      usuario_rol:
+        description: 'Crear usuario: rol'
+        type: choice
+        options: [admin, gerente, vendedor, deposito, cobranzas]
+        default: vendedor
 
 concurrency:
   group: deploy-production
@@ -57,9 +70,23 @@ jobs:
             free -m; df -h /; uptime
             curl -sS -m 10 -o /dev/null -w "health %{http_code}\n" http://localhost/api/v1/health -H "Host: ${{ vars.APP_DOMAIN }}" || true'
 
+      # Alta (o cambio de rol) de un usuario. La contraseña temporal sale una sola vez en el log.
+      - name: Crear usuario
+        if: inputs.usuario_email != '' && !inputs.solo_diagnostico
+        env:
+          USER_EMAIL: ${{ inputs.usuario_email }}
+          USER_NAME: ${{ inputs.usuario_nombre }}
+          USER_ROLE: ${{ inputs.usuario_rol }}
+        run: |
+          rsync -a infra/prod/create-user.sh "root@${{ vars.SSH_HOST }}:/opt/spiceos/infra/prod/"
+          {
+            for v in USER_EMAIL USER_NAME USER_ROLE; do printf 'export %s=%q\n' "$v" "${!v}"; done
+            printf '/opt/spiceos/infra/prod/create-user.sh\n'
+          } | ssh "root@${{ vars.SSH_HOST }}" bash -s
+
       # Reinicio de la app con la misma versión, para cuando la API quedó colgada.
       - name: Reiniciar API
-        if: inputs.reiniciar_api && !inputs.solo_diagnostico
+        if: inputs.reiniciar_api && !inputs.solo_diagnostico && inputs.usuario_email == ''
         run: |
           ssh "root@${{ vars.SSH_HOST }}" 'cd /opt/spiceos/infra/prod && docker compose restart api worker scheduler
             for i in $(seq 1 30); do
@@ -69,7 +96,7 @@ jobs:
             docker compose ps -a; docker compose logs --tail 100 api; exit 1'
 
       - name: Copiar configuración
-        if: ${{ !inputs.solo_diagnostico && !inputs.reiniciar_api }}
+        if: ${{ !inputs.solo_diagnostico && !inputs.reiniciar_api && (inputs.usuario_email == '' || inputs.usuario_email == null) }}
         run: |
           ssh "root@${{ vars.SSH_HOST }}" 'mkdir -p /opt/spiceos/infra/compose /opt/spiceos/infra/keycloak'
           rsync -a infra/prod/ "root@${{ vars.SSH_HOST }}:/opt/spiceos/infra/prod/" --exclude .env --exclude backups
@@ -78,7 +105,7 @@ jobs:
 
       # Los secretos viajan por stdin, no en la línea de comandos del servidor.
       - name: Desplegar
-        if: ${{ !inputs.solo_diagnostico && !inputs.reiniciar_api }}
+        if: ${{ !inputs.solo_diagnostico && !inputs.reiniciar_api && (inputs.usuario_email == '' || inputs.usuario_email == null) }}
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_TAG: ${{ env.SHA }}
