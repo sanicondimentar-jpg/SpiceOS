@@ -17,6 +17,7 @@ export const PERMISSIONS = {
   inventory: { read: 'inventory.stock.read', adjust: 'inventory.stock.adjust' },
   purchasing: { read: 'purchasing.order.read', write: 'purchasing.order.write' },
   receivables: { read: 'receivables.account.read', write: 'receivables.payment.write' },
+  invoicing: { read: 'invoicing.invoice.read', issue: 'invoicing.invoice.issue' },
   documents: { read: 'documents.document.read', write: 'documents.document.write' },
   messaging: { read: 'messaging.conversation.read', send: 'messaging.message.send' },
   automation: { read: 'automation.rule.read', write: 'automation.rule.write' },

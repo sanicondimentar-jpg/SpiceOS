@@ -17,14 +17,15 @@ export class UnitOfWork {
     private readonly outbox: OutboxService,
   ) {}
 
-  run<T>(fn: (tx: Tx, uow: UowScope) => Promise<T>): Promise<T> {
+  /** `timeoutMs`: para casos de uso que esperan a un servicio externo dentro de la transacción (ARCA). */
+  run<T>(fn: (tx: Tx, uow: UowScope) => Promise<T>, timeoutMs?: number): Promise<T> {
     return this.prisma.tx(async (tx) => {
       const scope = new UowScope();
       const result = await fn(tx, scope);
       for (const entry of scope.audits) await this.audit.record(tx, entry);
       await this.outbox.add(tx, [...scope.aggregates.flatMap((a) => a.pullEvents()), ...scope.events]);
       return result;
-    });
+    }, undefined, timeoutMs ? { timeout: timeoutMs } : undefined);
   }
 
   read<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {

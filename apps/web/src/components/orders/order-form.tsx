@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { useProducts } from '@/lib/catalog';
 import { optNumber, optText } from '@/lib/form';
 import { useCustomers, useMe } from '@/lib/hooks';
+import { useInvoicingStatus } from '@/lib/invoicing';
 import { useWarehouses } from '@/lib/inventory';
 import { useOrderPreview, type OrderPreview } from '@/lib/orders';
 import { cn, money, number } from '@/lib/utils';
@@ -54,6 +55,8 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
   const { data: me } = useMe();
   const canSeeCost = !!me?.permissions.includes('catalog.cost.read');
   const [value, setValue] = useState<OrderFormValue>({ customer: null, warehouseId: '', withInvoice: true, requestedDate: '', notes: '', lines: [], ...initial });
+  // Monotributo (Factura C): el precio de lista es el final y no se habla de IVA.
+  const vat = useInvoicingStatus().data?.taxCondition === 'RESPONSABLE_INSCRIPTO';
   const set = (patch: Partial<OrderFormValue>) => setValue((v) => ({ ...v, ...patch }));
   useEffect(() => {
     if (!value.warehouseId && warehouses?.length) set({ warehouseId: warehouses[0].id });
@@ -126,8 +129,8 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
           </Field>
           <Field label="Facturación" htmlFor="withInvoice">
             <Select id="withInvoice" value={value.withInvoice ? 'yes' : 'no'} onChange={(e) => set({ withInvoice: e.target.value === 'yes' })}>
-              <option value="yes">Con factura (+ IVA 21 %)</option>
-              <option value="no">Sin factura (sin IVA)</option>
+              <option value="yes">{vat ? 'Con factura (+ IVA 21 %)' : 'Con factura'}</option>
+              <option value="no">{vat ? 'Sin factura (sin IVA)' : 'Sin factura'}</option>
             </Select>
           </Field>
           <Field label="Notas" htmlFor="notes" className="sm:col-span-2 lg:col-span-3">
@@ -214,8 +217,12 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
           <CardContent className="space-y-2 p-5 text-sm">
             <Row label="Subtotal" value={money(result?.subtotal)} />
             {!!result?.discountTotal && <Row label="Descuentos" value={`− ${money(result.discountTotal)}`} />}
-            <Row label="Total sin IVA" value={money(result?.total)} />
-            {value.withInvoice ? <Row label="IVA 21 %" value={money(result?.taxTotal)} /> : <Row label="Sin factura" value="no lleva IVA" />}
+            {vat && (
+              <>
+                <Row label="Total sin IVA" value={money(result?.total)} />
+                {value.withInvoice ? <Row label="IVA 21 %" value={money(result?.taxTotal)} /> : <Row label="Sin factura" value="no lleva IVA" />}
+              </>
+            )}
             <Row label="Total a cobrar" value={money(result?.grandTotal)} strong />
             {canSeeCost && result?.marginTotal != null && <Row label="Margen" value={money(result.marginTotal)} />}
             <div className="flex flex-wrap justify-end gap-2 pt-2">

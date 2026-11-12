@@ -5,12 +5,14 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, use, useState } from 'react';
 import { Printer } from 'lucide-react';
 import { OrderForm } from '@/components/orders/order-form';
+import { OrderInvoices } from '@/components/orders/order-invoices';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMe } from '@/lib/hooks';
+import { useInvoicingStatus } from '@/lib/invoicing';
 import {
   CHANNEL_LABEL,
   STATUS_LABEL,
@@ -81,6 +83,7 @@ function Order({ id }: { id: string }) {
         <>
           {o.notes && <Card><CardContent className="p-4 text-sm"><span className="text-muted-foreground">Notas: </span>{o.notes}</CardContent></Card>}
           <Lines order={o} />
+          <OrderInvoices order={o} can={can} />
           <History order={o} />
         </>
       )}
@@ -152,6 +155,9 @@ function Actions({ order, can, onEdit, onConfirmed, initialError }: {
 }
 
 function Lines({ order }: { order: OrderDetail }) {
+  const { data: fiscal } = useInvoicingStatus();
+  // Como monotributista (Factura C) el precio de lista es el final; los pedidos viejos pueden tener IVA guardado.
+  const showVat = fiscal?.taxCondition === 'RESPONSABLE_INSCRIPTO' || order.taxTotal > 0;
   const showLots = order.lines.some((l) => l.lots.length);
   const showAvailable = order.status === 'DRAFT' || order.status === 'PENDING_REVIEW';
   const showMissing = order.lines.some((l) => l.backorderQty > 0);
@@ -210,8 +216,12 @@ function Lines({ order }: { order: OrderDetail }) {
           {!!order.discountTotal && (
             <tr><td colSpan={10} className="px-4 pt-3 text-right text-muted-foreground">Descuentos − {money(order.discountTotal)}</td></tr>
           )}
-          <tr><td colSpan={10} className="px-4 pt-3 text-right text-muted-foreground">Total sin IVA {money(order.total)}</td></tr>
-          <tr><td colSpan={10} className="px-4 pt-1 text-right text-muted-foreground">{order.withInvoice ? `IVA 21 % ${money(order.taxTotal)}` : 'Sin factura: no lleva IVA'}</td></tr>
+          {showVat && (
+            <>
+              <tr><td colSpan={10} className="px-4 pt-3 text-right text-muted-foreground">Total sin IVA {money(order.total)}</td></tr>
+              <tr><td colSpan={10} className="px-4 pt-1 text-right text-muted-foreground">{order.withInvoice ? `IVA 21 % ${money(order.taxTotal)}` : 'Sin factura: no lleva IVA'}</td></tr>
+            </>
+          )}
           <tr><td colSpan={10} className="px-4 py-3 text-right text-base font-semibold">Total a cobrar {money(order.grandTotal)}</td></tr>
           {order.marginTotal != null && (
             <tr className="print:hidden"><td colSpan={10} className="px-4 pb-3 text-right text-muted-foreground">Margen {money(order.marginTotal)}</td></tr>

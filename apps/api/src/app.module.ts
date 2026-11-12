@@ -24,6 +24,7 @@ import { TasksModule } from './modules/tasks/tasks.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { PurchasingModule } from './modules/purchasing/purchasing.module';
+import { InvoicingModule } from './modules/invoicing/invoicing.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { PurchasingModule } from './modules/purchasing/purchasing.module';
     AnalyticsModule,
     ImportsModule,
     PurchasingModule,
+    InvoicingModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

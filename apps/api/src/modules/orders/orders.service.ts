@@ -22,7 +22,8 @@ import { InventoryFacade } from '../inventory/inventory.facade';
 import { InventoryService } from '../inventory/inventory.service';
 import { PurchasingService, type ShortageLine, type ShortageResult } from '../purchasing/purchasing.service';
 import { priceLines } from '../sales/quote-pricing';
-import { orderTax } from './order-tax';
+import { addsVat } from '../invoicing/fiscal-settings.service';
+import { orderTax, storedTax } from './order-tax';
 
 class OrderEvents extends AggregateRoot {
   emit(e: DomainEvent) {
@@ -101,7 +102,7 @@ export class OrdersService {
         subtotal: pricing.subtotal,
         discountTotal: pricing.discountTotal,
         total: pricing.total,
-        ...orderTax(pricing.total, input.withInvoice),
+        ...orderTax(pricing.total, input.withInvoice, await addsVat(tx)),
         ...(canSeeCost && { marginTotal: pricing.marginTotal }),
         warnings: [
           ...missing.map((l) => `${priced.get(l.variantId)!.name} no tiene precio en la lista del cliente; indicá un precio`),
@@ -120,6 +121,7 @@ export class OrdersService {
       const pricing = priceLines(input.lines, await this.catalog.price(tx, input.lines, priceListId), 100);
       const id = randomUUID();
       const number = await nextNumber(tx, input.branchId, 'order', 'PED-');
+      const tax = orderTax(pricing.total, input.withInvoice, await addsVat(tx));
       await tx.salesOrder.create({
         data: {
           id,
@@ -133,7 +135,8 @@ export class OrdersService {
           subtotal: pricing.subtotal,
           discountTotal: pricing.discountTotal,
           total: pricing.total,
-          ...this.tax(pricing.total, input.withInvoice),
+          withInvoice: tax.withInvoice,
+          taxTotal: tax.taxTotal,
           marginTotal: pricing.marginTotal,
           requestedDate: input.requestedDate ? new Date(input.requestedDate) : null,
           notes: input.notes,
@@ -147,7 +150,7 @@ export class OrdersService {
       events.emit(new DomainEvent('order.created', 'order', id, { orderId: id, customerId: input.customerId, total: pricing.total }));
       scope.track(events);
       scope.auditLog({ action: 'order.create', entityType: 'order', entityId: id, after: { number, total: pricing.total } });
-      return { id, number, total: pricing.total, ...orderTax(pricing.total, input.withInvoice) };
+      return { id, number, total: pricing.total, ...tax };
     });
   }
 
@@ -188,7 +191,8 @@ export class OrdersService {
         });
       }
       // El IVA se recalcula si cambian las líneas o si pasa a ser con o sin factura.
-      Object.assign(data, this.tax(Number(data.total ?? order.total), input.withInvoice ?? order.withInvoice));
+      const tax = orderTax(Number(data.total ?? order.total), input.withInvoice ?? order.withInvoice, await addsVat(tx));
+      Object.assign(data, { withInvoice: tax.withInvoice, taxTotal: tax.taxTotal });
       await tx.salesOrder.update({ where: { id }, data: { ...data, version: { increment: 1 } } });
       scope.auditLog({ action: 'order.update', entityType: 'order', entityId: id, before: { total: Number(order.total) }, after: data });
       return { id, version: order.version + 1 };
@@ -257,6 +261,10 @@ export class OrdersService {
         this.emit(scope, 'order.delivered', order, {});
       }
       await this.setStatus(tx, order, input.to, {}, input.reason);
+      // Si ya se facturó antes de entregarlo, al entregarlo queda directamente facturado.
+      if (input.to === 'DELIVERED' && (await tx.invoice.count({ where: { orderId: id, status: { not: 'CANCELLED' }, NOT: { type: { startsWith: 'NC' } } } }))) {
+        await this.setStatus(tx, { id, status: 'DELIVERED' }, 'INVOICED', {}, 'Ya estaba facturado');
+      }
       scope.auditLog({ action: `order.${input.to.toLowerCase()}`, entityType: 'order', entityId: id, before: { status: order.status }, after: { status: input.to, reason: input.reason } });
       return { id, status: input.to };
     });
@@ -289,7 +297,7 @@ export class OrdersService {
         customer: o.customer.tradeName ?? o.customer.legalName,
         channel: o.channel,
         total: Number(o.total),
-        ...orderTax(Number(o.total), o.withInvoice),
+        ...storedTax(o),
         lines: o._count.lines,
         requestedDate: o.requestedDate,
         createdAt: o.createdAt,
@@ -349,7 +357,7 @@ export class OrdersService {
         subtotal: Number(o.subtotal),
         discountTotal: Number(o.discountTotal),
         total: Number(o.total),
-        ...orderTax(Number(o.total), o.withInvoice),
+        ...storedTax(o),
         ...(canSeeCost && { marginTotal: Number(o.marginTotal) }),
         createdAt: o.createdAt,
         confirmedAt: o.confirmedAt,
@@ -387,11 +395,6 @@ export class OrdersService {
       });
       await tx.salesOrderLine.update({ where: { id: line.id }, data: { backorderQty: 0 } });
     }
-  }
-
-  private tax(net: number, withInvoice: boolean) {
-    const { taxTotal } = orderTax(net, withInvoice);
-    return { withInvoice, taxTotal };
   }
 
   private lineData(l: { variantId: string; quantity: number; unitPrice: number; discountPct: number; unitCost: number; lineTotal: number }) {

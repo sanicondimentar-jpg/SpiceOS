@@ -12,6 +12,7 @@ import { CatalogFacade } from '../catalog/catalog.facade';
 import { CrmFacade } from '../crm/crm.facade';
 import { normalizePhone } from '../crm/domain/customer';
 import { priceLines } from '../sales/quote-pricing';
+import { addsVat } from '../invoicing/fiscal-settings.service';
 import { orderTax } from './order-tax';
 
 class OrderEvents extends AggregateRoot {
@@ -114,7 +115,7 @@ export class WebOrdersService {
             subtotal: pricing.subtotal,
             discountTotal: pricing.discountTotal,
             total: pricing.total,
-            taxTotal: orderTax(pricing.total, true).taxTotal,
+            taxTotal: orderTax(pricing.total, true, await addsVat(tx)).taxTotal,
             marginTotal: pricing.marginTotal,
             notes,
             contactName: input.name,

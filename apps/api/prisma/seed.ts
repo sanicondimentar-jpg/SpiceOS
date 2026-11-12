@@ -25,7 +25,7 @@ const ROLES: { key: string; name: string; maxDiscount: number; permissions: stri
       PERMISSIONS.sales.opportunityRead, PERMISSIONS.sales.opportunityWrite,
       PERMISSIONS.sales.quoteRead, PERMISSIONS.sales.quoteWrite,
       PERMISSIONS.catalog.read, PERMISSIONS.orders.read, PERMISSIONS.orders.write,
-      PERMISSIONS.inventory.read, PERMISSIONS.receivables.read, PERMISSIONS.documents.read,
+      PERMISSIONS.inventory.read, PERMISSIONS.receivables.read, PERMISSIONS.invoicing.read, PERMISSIONS.documents.read,
       PERMISSIONS.messaging.read, PERMISSIONS.messaging.send, PERMISSIONS.copilot.use,
     ],
   },
@@ -39,7 +39,7 @@ const ROLES: { key: string; name: string; maxDiscount: number; permissions: stri
     key: 'cobranzas',
     name: 'Cobranzas',
     maxDiscount: 0,
-    permissions: [PERMISSIONS.crm.customerRead, PERMISSIONS.receivables.read, PERMISSIONS.receivables.write, PERMISSIONS.messaging.read, PERMISSIONS.messaging.send, PERMISSIONS.copilot.use],
+    permissions: [PERMISSIONS.crm.customerRead, PERMISSIONS.receivables.read, PERMISSIONS.receivables.write, PERMISSIONS.invoicing.read, PERMISSIONS.invoicing.issue, PERMISSIONS.messaging.read, PERMISSIONS.messaging.send, PERMISSIONS.copilot.use],
   },
 ];
 

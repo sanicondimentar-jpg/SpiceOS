@@ -5,3 +5,4 @@ export * from './catalog';
 export * from './crm';
 export * from './inventory';
 export * from './messaging';
+export * from './invoicing';
