@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  BarChart3, Boxes, ClipboardList, FileText, Tags, Upload, LayoutDashboard, MessageCircle, Package, Settings, ShoppingCart, Truck, Users, Wallet, Workflow, Target,
+  BarChart3, Boxes, ClipboardList, FileText, Tags, Upload, LayoutDashboard, MessageCircle, Package, Receipt, Settings, ShoppingCart, Truck, Users, Wallet, Workflow, Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMe } from '@/lib/hooks';
@@ -21,6 +21,7 @@ const NAV = [
   { href: '/inventory', label: 'Inventario', icon: Boxes, perm: 'inventory.stock.read' },
   { href: '/purchases', label: 'Compras', icon: ClipboardList, perm: 'purchasing.order.read' },
   { href: '/logistics', label: 'Logística', icon: Truck, perm: 'orders.order.read' },
+  { href: '/invoices', label: 'Facturas', icon: Receipt, perm: 'invoicing.invoice.read' },
   { href: '/receivables', label: 'Cobranza', icon: Wallet, perm: 'receivables.account.read' },
   { href: '/documents', label: 'Documentos', icon: FileText, perm: 'documents.document.read' },
   { href: '/automation', label: 'Automatizaciones', icon: Workflow, perm: 'automation.rule.read' },

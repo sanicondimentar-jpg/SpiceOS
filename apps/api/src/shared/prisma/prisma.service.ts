@@ -25,11 +25,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   /** Transacción con el tenant del contexto actual. */
-  tx<T>(fn: (tx: Tx) => Promise<T>, tenantId = RequestContextStore.get().tenantId): Promise<T> {
+  tx<T>(fn: (tx: Tx) => Promise<T>, tenantId = RequestContextStore.get().tenantId, options?: { timeout?: number }): Promise<T> {
     return this.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
       return fn(tx);
-    });
+    }, options);
   }
 }
 

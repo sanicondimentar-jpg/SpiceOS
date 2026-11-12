@@ -1221,27 +1221,79 @@ model LedgerEntry {
 }
 
 model Invoice {
-  id          String        @id @default(uuid()) @db.Uuid
-  tenantId    String        @map("tenant_id") @db.Uuid
-  accountId   String        @map("account_id") @db.Uuid
-  orderId     String?       @map("order_id") @db.Uuid
-  type        String // A, B, NC-A...
-  pointOfSale Int           @map("point_of_sale")
-  number      Int
-  issueDate   DateTime      @map("issue_date") @db.Date
-  dueDate     DateTime      @map("due_date") @db.Date
-  total       Decimal       @db.Decimal(18, 4)
-  pending     Decimal       @db.Decimal(18, 4)
-  status      InvoiceStatus @default(OPEN)
-  cae         String? // código de autorización electrónica (ARCA)
-  externalRef String?       @map("external_ref") // id en ERP/facturador externo
+  id                String        @id @default(uuid()) @db.Uuid
+  tenantId          String        @map("tenant_id") @db.Uuid
+  accountId         String        @map("account_id") @db.Uuid
+  orderId           String?       @map("order_id") @db.Uuid
+  type              String // C, NC-C, A, B, NC-A, NC-B
+  pointOfSale       Int           @map("point_of_sale")
+  number            Int
+  issueDate         DateTime      @map("issue_date") @db.Date
+  dueDate           DateTime      @map("due_date") @db.Date
+  total             Decimal       @db.Decimal(18, 4)
+  pending           Decimal       @db.Decimal(18, 4)
+  status            InvoiceStatus @default(OPEN)
+  cae               String? // código de autorización electrónica (ARCA)
+  externalRef       String?       @map("external_ref") // id en ERP/facturador externo
+  // Emitidas desde SpiceOS por web services de ARCA. Los datos del receptor y las líneas se
+  // guardan como quedaron en el comprobante: si después cambia el cliente, la factura no cambia.
+  arcaType          Int?          @map("arca_type") // código de comprobante de ARCA: 11 Factura C, 13 NC C, 1 A, 6 B...
+  issuerCondition   String?       @map("issuer_condition") // MONOTRIBUTO / RESPONSABLE_INSCRIPTO al emitir
+  receiverName      String?       @map("receiver_name")
+  receiverDocType   Int?          @map("receiver_doc_type") // 80 CUIT, 96 DNI, 99 sin identificar
+  receiverDocNumber String?       @map("receiver_doc_number")
+  receiverCondition String?       @map("receiver_condition") // RI, Monotributo, CF, Exento
+  receiverAddress   String?       @map("receiver_address")
+  net               Decimal?      @db.Decimal(18, 2)
+  vat               Decimal?      @db.Decimal(18, 2)
+  caeDueDate        DateTime?     @map("cae_due_date") @db.Date
+  testing           Boolean       @default(false) // emitida en homologación (no vale fiscalmente)
+  lines             Json?
+  relatedInvoiceId  String?       @map("related_invoice_id") @db.Uuid // la factura que anula una nota de crédito
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  createdBy         String?       @map("created_by") @db.Uuid
 
   account     CustomerAccount     @relation(fields: [accountId], references: [id])
   allocations PaymentAllocation[]
 
   @@unique([tenantId, type, pointOfSale, number])
   @@index([tenantId, status, dueDate])
+  @@index([tenantId, orderId])
   @@map("invoices")
+}
+
+model FiscalSettings {
+  id                   String          @id @default(uuid()) @db.Uuid
+  tenantId             String          @unique @map("tenant_id") @db.Uuid
+  taxCondition         FiscalCondition @default(MONOTRIBUTO) @map("tax_condition")
+  cuit                 String
+  legalName            String          @map("legal_name")
+  address              String
+  grossIncomeId        String?         @map("gross_income_id") // Ingresos Brutos
+  activityStart        DateTime?       @map("activity_start") @db.Date
+  pointOfSale          Int?            @map("point_of_sale")
+  environment          ArcaEnvironment @default(PRODUCTION)
+  annualCap            Decimal?        @map("annual_cap") @db.Decimal(18, 2) // tope de la categoría del monotributo
+  monotributoCategory  String?         @map("monotributo_category")
+  encryptedPrivateKey  Bytes?          @map("encrypted_private_key")
+  csr                  String?
+  certificate          String?
+  certificateExpiresAt DateTime?       @map("certificate_expires_at") @db.Timestamptz
+  encryptedTicket      Bytes?          @map("encrypted_ticket") // token y firma de WSAA (duran 12 h)
+  ticketExpiresAt      DateTime?       @map("ticket_expires_at") @db.Timestamptz
+  updatedAt            DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("fiscal_settings")
+}
+
+enum FiscalCondition {
+  MONOTRIBUTO
+  RESPONSABLE_INSCRIPTO
+}
+
+enum ArcaEnvironment {
+  TESTING
+  PRODUCTION
 }
 
 enum InvoiceStatus {
