@@ -57,91 +57,112 @@ export class WebOrdersService {
   async receive(orgAlias: string, input: WebOrderInput) {
     if (input.website) throw new BusinessRuleError('No se pudo registrar el pedido');
     const ctx = await this.context(orgAlias);
+    return RequestContextStore.run(ctx, () => this.create(input, 'Recibido desde la web'));
+  }
+
+  /**
+   * Pedido armado en la web que llegó solo por WhatsApp: el cliente lo mandó con "Mandar por WhatsApp
+   * sin número de pedido" porque el sistema no respondió. Se registra igual, pendiente de revisión.
+   * Devuelve null si ese mensaje ya generó un pedido (el evento se puede reintentar).
+   */
+  async receiveFromWhatsapp(input: WebOrderInput, messageId: string) {
+    const reason = `Recibido por WhatsApp sin número de pedido (mensaje ${messageId})`;
+    const done = await this.uow.read((tx) => tx.orderStatusHistory.findFirst({ where: { reason }, select: { id: true } }));
+    if (done) return null;
+    return this.create(
+      input,
+      reason,
+      'Llegó por WhatsApp con el formato de la web, sin número de pedido: la web no pudo registrarlo en el momento.',
+    );
+  }
+
+  /** Crea el pedido "Por revisar" en la empresa del contexto actual. */
+  private async create(input: WebOrderInput, reason: string, origin?: string) {
+    const ctx = RequestContextStore.get();
     const phone = normalizePhone(input.phone);
     if (!phone) throw new BusinessRuleError('Indicá un teléfono válido');
 
-    return RequestContextStore.run(ctx, () =>
-      this.uow.run(async (tx, scope) => {
-        const branch =
-          (await tx.branch.findFirst({ where: { isMain: true }, select: { id: true } })) ??
-          (await tx.branch.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } }));
-        const warehouse = branch && (await tx.warehouse.findFirst({ where: { branchId: branch.id, isActive: true }, orderBy: { code: 'asc' }, select: { id: true } }));
-        if (!branch || !warehouse) throw new BusinessRuleError('La empresa no tiene depósito configurado');
+    return this.uow.run(async (tx, scope) => {
+      const branch =
+        (await tx.branch.findFirst({ where: { isMain: true }, select: { id: true } })) ??
+        (await tx.branch.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } }));
+      const warehouse = branch && (await tx.warehouse.findFirst({ where: { branchId: branch.id, isActive: true }, orderBy: { code: 'asc' }, select: { id: true } }));
+      if (!branch || !warehouse) throw new BusinessRuleError('La empresa no tiene depósito configurado');
 
-        const priceList = await tx.priceList.findFirst({ where: { name: { equals: LIST_BY_MODE[input.mode], mode: 'insensitive' } }, select: { id: true } });
+      const priceList = await tx.priceList.findFirst({ where: { name: { equals: LIST_BY_MODE[input.mode], mode: 'insensitive' } }, select: { id: true } });
 
-        // Mismo SKU repetido en el carrito: se suma.
-        const qtyBySku = new Map<string, number>();
-        for (const l of input.lines) qtyBySku.set(l.sku, (qtyBySku.get(l.sku) ?? 0) + l.quantity);
-        const variants = await tx.productVariant.findMany({ where: { sku: { in: [...qtyBySku.keys()] }, isActive: true }, select: { id: true, sku: true } });
-        const unknown = [...qtyBySku.keys()].filter((sku) => !variants.some((v) => v.sku === sku));
-        if (!variants.length) throw new BusinessRuleError('Ningún producto del pedido figura en el catálogo');
+      // Mismo SKU repetido en el carrito: se suma.
+      const qtyBySku = new Map<string, number>();
+      for (const l of input.lines) qtyBySku.set(l.sku, (qtyBySku.get(l.sku) ?? 0) + l.quantity);
+      const variants = await tx.productVariant.findMany({ where: { sku: { in: [...qtyBySku.keys()] }, isActive: true }, select: { id: true, sku: true } });
+      const unknown = [...qtyBySku.keys()].filter((sku) => !variants.some((v) => v.sku === sku));
+      if (!variants.length) throw new BusinessRuleError('Ningún producto del pedido figura en el catálogo');
 
-        const items = variants.map((v) => ({ variantId: v.id, quantity: qtyBySku.get(v.sku)!, discountPct: 0 }));
-        const priced = await this.catalog.price(tx, items, priceList?.id ?? null);
-        const noPrice = items.filter((i) => priced.get(i.variantId)!.listPrice == null);
-        // Los que no tienen precio entran a $0 para que quien revisa los complete.
-        const pricing = priceLines(
-          items.map((i) => (noPrice.includes(i) ? { ...i, unitPrice: 0 } : i)),
-          priced,
-          100,
-        );
+      const items = variants.map((v) => ({ variantId: v.id, quantity: qtyBySku.get(v.sku)!, discountPct: 0 }));
+      const priced = await this.catalog.price(tx, items, priceList?.id ?? null);
+      const noPrice = items.filter((i) => priced.get(i.variantId)!.listPrice == null);
+      // Los que no tienen precio entran a $0 para que quien revisa los complete.
+      const pricing = priceLines(
+        items.map((i) => (noPrice.includes(i) ? { ...i, unitPrice: 0 } : i)),
+        priced,
+        100,
+      );
 
-        let customerId = await this.crm.findIdByPhone(tx, phone);
-        const createdCustomer = !customerId;
-        if (!customerId) customerId = (await this.crm.createWebProspect(tx, scope, { name: input.name, phone, priceListId: priceList?.id ?? null })).id;
+      let customerId = await this.crm.findIdByPhone(tx, phone);
+      const createdCustomer = !customerId;
+      if (!customerId) customerId = (await this.crm.createWebProspect(tx, scope, { name: input.name, phone, priceListId: priceList?.id ?? null })).id;
 
-        const notes = [
-          input.notes,
-          `Pedido web (${input.mode}) de ${input.name}, tel. ${input.phone}.`,
-          unknown.length ? `Códigos que no están en el catálogo: ${unknown.map((s) => `${s} × ${qtyBySku.get(s)}`).join(', ')}.` : null,
-          noPrice.length ? `Sin precio en la lista: ${noPrice.map((i) => priced.get(i.variantId)!.sku).join(', ')}.` : null,
-        ]
-          .filter(Boolean)
-          .join('\n');
+      const notes = [
+        origin,
+        input.notes,
+        `Pedido web (${input.mode}) de ${input.name}, tel. ${input.phone}.`,
+        unknown.length ? `Códigos que no están en el catálogo: ${unknown.map((s) => `${s} × ${qtyBySku.get(s)}`).join(', ')}.` : null,
+        noPrice.length ? `Sin precio en la lista: ${noPrice.map((i) => priced.get(i.variantId)!.sku).join(', ')}.` : null,
+      ]
+        .filter(Boolean)
+        .join('\n');
 
-        const id = randomUUID();
-        const number = await nextNumber(tx, branch.id, 'order', 'PED-');
-        await tx.salesOrder.create({
-          data: {
-            id,
-            tenantId: ctx.tenantId,
-            branchId: branch.id,
-            warehouseId: warehouse.id,
-            number,
-            customerId,
-            status: 'PENDING_REVIEW',
-            channel: 'web',
-            subtotal: pricing.subtotal,
-            discountTotal: pricing.discountTotal,
-            total: pricing.total,
-            taxTotal: orderTax(pricing.total, false, await addsVat(tx)).taxTotal,
-            marginTotal: pricing.marginTotal,
-            notes,
-            contactName: input.name,
-            contactPhone: phone,
-            webTotal: input.total,
-            createdCustomer,
-            lines: {
-              create: pricing.lines.map((l) => ({
-                variantId: l.variantId,
-                quantity: l.quantity,
-                unitPrice: l.unitPrice,
-                discountPct: l.discountPct,
-                unitCost: l.unitCost,
-                lineTotal: l.lineTotal,
-              })),
-            },
-            statusHistory: { create: { to: 'PENDING_REVIEW', changedBy: ctx.actor, reason: 'Recibido desde la web' } },
+      const id = randomUUID();
+      const number = await nextNumber(tx, branch.id, 'order', 'PED-');
+      await tx.salesOrder.create({
+        data: {
+          id,
+          tenantId: ctx.tenantId,
+          branchId: branch.id,
+          warehouseId: warehouse.id,
+          number,
+          customerId,
+          status: 'PENDING_REVIEW',
+          channel: 'web',
+          subtotal: pricing.subtotal,
+          discountTotal: pricing.discountTotal,
+          total: pricing.total,
+          taxTotal: orderTax(pricing.total, false, await addsVat(tx)).taxTotal,
+          marginTotal: pricing.marginTotal,
+          notes,
+          contactName: input.name,
+          contactPhone: phone,
+          webTotal: input.total,
+          createdCustomer,
+          lines: {
+            create: pricing.lines.map((l) => ({
+              variantId: l.variantId,
+              quantity: l.quantity,
+              unitPrice: l.unitPrice,
+              discountPct: l.discountPct,
+              unitCost: l.unitCost,
+              lineTotal: l.lineTotal,
+            })),
           },
-        });
-        const events = new OrderEvents();
-        events.emit(new DomainEvent('order.created', 'order', id, { orderId: id, number, customerId, total: pricing.total, channel: 'web' }));
-        scope.track(events);
-        scope.auditLog({ action: 'order.create', entityType: 'order', entityId: id, after: { number, total: pricing.total, channel: 'web' } });
-        return { number, status: 'PENDING_REVIEW' as const, total: pricing.total };
-      }),
-    );
+          statusHistory: { create: { to: 'PENDING_REVIEW', changedBy: ctx.actor, reason } },
+        },
+      });
+      const events = new OrderEvents();
+      events.emit(new DomainEvent('order.created', 'order', id, { orderId: id, number, customerId, total: pricing.total, channel: 'web' }));
+      scope.track(events);
+      scope.auditLog({ action: 'order.create', entityType: 'order', entityId: id, after: { number, total: pricing.total, channel: 'web' } });
+      return { number, status: 'PENDING_REVIEW' as const, total: pricing.total };
+    });
   }
 
   /**
