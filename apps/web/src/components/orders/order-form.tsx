@@ -54,7 +54,7 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
   const { data: warehouses } = useWarehouses();
   const { data: me } = useMe();
   const canSeeCost = !!me?.permissions.includes('catalog.cost.read');
-  const [value, setValue] = useState<OrderFormValue>({ customer: null, warehouseId: '', withInvoice: true, requestedDate: '', notes: '', lines: [], ...initial });
+  const [value, setValue] = useState<OrderFormValue>({ customer: null, warehouseId: '', withInvoice: false, requestedDate: '', notes: '', lines: [], ...initial });
   // Monotributo (Factura C): el precio de lista es el final y no se habla de IVA.
   const vat = useInvoicingStatus().data?.taxCondition === 'RESPONSABLE_INSCRIPTO';
   const set = (patch: Partial<OrderFormValue>) => setValue((v) => ({ ...v, ...patch }));

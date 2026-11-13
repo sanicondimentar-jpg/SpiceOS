@@ -115,7 +115,7 @@ export class WebOrdersService {
             subtotal: pricing.subtotal,
             discountTotal: pricing.discountTotal,
             total: pricing.total,
-            taxTotal: orderTax(pricing.total, true, await addsVat(tx)).taxTotal,
+            taxTotal: orderTax(pricing.total, false, await addsVat(tx)).taxTotal,
             marginTotal: pricing.marginTotal,
             notes,
             contactName: input.name,
