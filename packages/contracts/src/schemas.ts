@@ -58,8 +58,8 @@ export const createOrderSchema = z.object({
   warehouseId: z.string().uuid(),
   quoteId: z.string().uuid().optional(),
   channel: z.enum(['sales_rep', 'whatsapp', 'portal', 'copilot', 'web']).default('sales_rep'),
-  /** Sin factura se vende al precio sin IVA y no se suma IVA. */
-  withInvoice: z.boolean().default(true),
+  /** Por defecto sin factura: facturar es opcional. Como Responsable Inscripto, con factura suma IVA. */
+  withInvoice: z.boolean().default(false),
   requestedDate: z.string().date().optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(quoteLineSchema).min(1),
