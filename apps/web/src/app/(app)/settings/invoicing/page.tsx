@@ -290,13 +290,16 @@ function TestCard({ settings }: { settings: FiscalSettingsView }) {
         {r && (
           <div className="space-y-1">
             <p className="text-success">ARCA aceptó el certificado.</p>
-            <p>
-              Puntos de venta para web services: {wsPoints.length ? wsPoints.map((p) => p.number).join(', ') : 'ninguno todavía'}.
-              {settings.pointOfSale && !wsPoints.some((p) => p.number === settings.pointOfSale) && (
-                <span className="text-warning"> El {settings.pointOfSale} no aparece: revisá el número o esperá unos minutos si recién lo diste de alta.</span>
-              )}
-            </p>
-            {r.lastNumber !== null && <p>Última Factura {r.kind} autorizada en el punto de venta {settings.pointOfSale}: {r.lastNumber || 'ninguna'}.</p>}
+            {/* ARCA a veces devuelve la lista vacía aunque el punto de venta exista: lo que vale es que acepte consultar el último número. */}
+            {!!wsPoints.length && <p>Puntos de venta para web services: {wsPoints.map((p) => p.number).join(', ')}.</p>}
+            {r.lastNumber !== null ? (
+              <p>
+                Punto de venta {settings.pointOfSale} habilitado. Última Factura {r.kind} autorizada: {r.lastNumber || 'ninguna'}.{' '}
+                <span className="text-success">Ya se puede facturar.</span>
+              </p>
+            ) : (
+              <p className="text-warning">Falta cargar el punto de venta en el paso 1.</p>
+            )}
           </div>
         )}
       </CardContent>
