@@ -161,6 +161,11 @@ healthy() {
   done
   return 1
 }
+log "Vigilancia de la API (cron cada minuto: si se cuelga, se reinicia sola)"
+chmod +x "$PWD/watchdog.sh"
+printf 'SHELL=/bin/bash\n* * * * * root %s/watchdog.sh\n' "$PWD" > /etc/cron.d/spiceos-watchdog
+chmod 644 /etc/cron.d/spiceos-watchdog
+
 # Si la versión no cambió, compose no reinicia la API; si quedó colgada (pasó el 5/11), se reinicia una vez.
 if healthy 30 || { log "La API no responde: reiniciando api, worker y scheduler"; dc restart api worker scheduler; healthy 18; }; then
   log "Listo: https://$APP_DOMAIN"

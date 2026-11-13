@@ -44,3 +44,9 @@ grep KEYCLOAK_ADMIN_PASSWORD .env     # consola de Keycloak: https://AUTH_DOMAIN
 # restaurar la base desde un backup
 docker compose exec -T postgres pg_restore -U spiceos -d spiceos --clean < backups/spiceos-AAAAMMDD-HHMM.dump
 ```
+
+### Vigilancia de la API
+
+`deploy.sh` instala `/etc/cron.d/spiceos-watchdog`, que corre `watchdog.sh` cada minuto. Si la API no
+responde su `/health` durante 3 minutos seguidos, reinicia api, worker y scheduler (Docker no reinicia
+solo un contenedor "unhealthy"). Lo que hace queda en `/var/log/spiceos-watchdog.log`.
