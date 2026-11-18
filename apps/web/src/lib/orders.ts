@@ -30,6 +30,14 @@ export const STATUS_TONE: Record<OrderStatus, 'neutral' | 'brand' | 'warn' | 'go
   CANCELLED: 'bad',
 };
 
+/** Acción principal de cada estado: qué botón mueve el pedido al siguiente. */
+export const NEXT_ACTION: Partial<Record<OrderStatus, { to: 'PICKING' | 'READY' | 'DISPATCHED' | 'DELIVERED'; label: string }>> = {
+  CONFIRMED: { to: 'PICKING', label: 'Empezar preparación' },
+  PICKING: { to: 'READY', label: 'Marcar listo' },
+  READY: { to: 'DISPATCHED', label: 'Despachar' },
+  DISPATCHED: { to: 'DELIVERED', label: 'Marcar entregado' },
+};
+
 export const CHANNEL_LABEL: Record<string, string> = { sales_rep: 'Vendedor', whatsapp: 'WhatsApp', portal: 'Portal', copilot: 'Copiloto', web: 'Web' };
 
 export interface OrderRow {
@@ -168,3 +176,25 @@ export const useConfirmOrder = (id: string) =>
 
 export const useOrderTransition = (id: string) =>
   useOrderMutation((input: OrderTransitionInput) => api<{ status: string }>(`/orders/${id}/status`, { method: 'POST', body: JSON.stringify(input) }));
+
+/** Pedido en curso del tablero de inicio. */
+export interface BoardOrder {
+  id: string;
+  number: string;
+  status: OrderStatus;
+  customerId: string;
+  customer: string;
+  channel: string;
+  total: number;
+  withInvoice: boolean;
+  taxTotal: number;
+  grandTotal: number;
+  requestedDate: string | null;
+  createdAt: string;
+  statusSince: string;
+  waitingStock: boolean;
+}
+
+/** Se refresca solo cada 30 segundos: los pedidos de la web y WhatsApp aparecen sin recargar. */
+export const useOrderBoard = (enabled = true) =>
+  useQuery({ queryKey: ['orders', 'board'], enabled, queryFn: () => api<BoardOrder[]>('/orders/board'), refetchInterval: 30_000 });

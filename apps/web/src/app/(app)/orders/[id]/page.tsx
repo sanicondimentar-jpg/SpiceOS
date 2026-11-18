@@ -22,18 +22,11 @@ import {
   useOrderTransition,
   useUpdateOrder,
   type OrderDetail,
-  type OrderStatus,
   type Shortage,
+  NEXT_ACTION,
 } from '@/lib/orders';
 import { cn, date, money, number } from '@/lib/utils';
 
-/** Acción principal de cada estado: qué botón mueve el pedido al siguiente. */
-const NEXT_ACTION: Partial<Record<OrderStatus, { to: 'PICKING' | 'READY' | 'DISPATCHED' | 'DELIVERED'; label: string }>> = {
-  CONFIRMED: { to: 'PICKING', label: 'Empezar preparación' },
-  PICKING: { to: 'READY', label: 'Marcar listo' },
-  READY: { to: 'DISPATCHED', label: 'Despachar' },
-  DISPATCHED: { to: 'DELIVERED', label: 'Marcar entregado' },
-};
 
 export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);

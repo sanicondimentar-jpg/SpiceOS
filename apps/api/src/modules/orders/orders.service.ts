@@ -42,6 +42,9 @@ const TRANSITIONS: Record<string, string[]> = {
   DELIVERED: ['INVOICED'],
 };
 
+/** Pedidos en curso: desde que entran hasta que se entregan (los entregados salen del tablero). */
+export const ACTIVE_STATUSES: OrderStatus[] = ['PENDING_REVIEW', 'DRAFT', 'CONFIRMED', 'PICKING', 'READY', 'DISPATCHED'];
+
 /** Estados en los que el pedido todavía se puede editar. */
 const EDITABLE: string[] = ['PENDING_REVIEW', 'DRAFT'];
 
@@ -301,6 +304,39 @@ export class OrdersService {
         lines: o._count.lines,
         requestedDate: o.requestedDate,
         createdAt: o.createdAt,
+      }));
+    });
+  }
+
+  /**
+   * Tablero de inicio: todos los pedidos en curso (web, WhatsApp, teléfono) con cuándo entraron
+   * al estado actual y si esperan mercadería. Al entregarse o cancelarse dejan de aparecer.
+   */
+  board() {
+    return this.uow.read(async (tx) => {
+      const rows = await tx.salesOrder.findMany({
+        where: { status: { in: ACTIVE_STATUSES } },
+        orderBy: { createdAt: 'asc' },
+        take: 300,
+        include: {
+          customer: { select: { legalName: true, tradeName: true } },
+          statusHistory: { orderBy: { changedAt: 'desc' }, take: 1, select: { changedAt: true } },
+          lines: { where: { backorderQty: { gt: 0 } }, select: { id: true }, take: 1 },
+        },
+      });
+      return rows.map((o) => ({
+        id: o.id,
+        number: o.number,
+        status: o.status,
+        customerId: o.customerId,
+        customer: o.customer.tradeName ?? o.customer.legalName,
+        channel: o.channel,
+        total: Number(o.total),
+        ...storedTax(o),
+        requestedDate: o.requestedDate,
+        createdAt: o.createdAt,
+        statusSince: o.statusHistory[0]?.changedAt ?? o.createdAt,
+        waitingStock: o.lines.length > 0,
       }));
     });
   }
