@@ -29,6 +29,13 @@ export class OrdersController {
     return this.orders.list(query);
   }
 
+  /** Pedidos en curso para el tablero de inicio. Va antes de :id para que no lo tome como id. */
+  @Get('board')
+  @RequirePermissions(PERMISSIONS.orders.read)
+  board() {
+    return this.orders.board();
+  }
+
   @Post('preview')
   @RequirePermissions(PERMISSIONS.orders.write)
   preview(@Body(new ZodPipe(orderPreviewSchema)) body: OrderPreviewInput) {

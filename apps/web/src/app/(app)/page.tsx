@@ -4,12 +4,14 @@ import { AlertTriangle, Boxes, TrendingUp, Users, Wallet } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { money, number } from '@/lib/utils';
+import { OrderBoard } from '@/components/orders/order-board';
 import { useExecutiveKpis, useMe, useRevenueByMonth } from '@/lib/hooks';
 
 export default function DashboardPage() {
   const { data: me } = useMe();
   const { data: k, isLoading } = useExecutiveKpis();
   const { data: months } = useRevenueByMonth();
+  const canSeeOrders = !!me?.permissions.includes('orders.order.read');
 
   const delta = k && k.revenue_prev_mtd > 0 ? ((k.revenue_mtd - k.revenue_prev_mtd) / k.revenue_prev_mtd) * 100 : null;
   const max = Math.max(1, ...(months ?? []).map((m) => m.revenue));
@@ -20,6 +22,8 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-semibold">Hola{me ? `, ${me.user.fullName.split(' ')[0]}` : ''}</h1>
         <p className="text-sm text-muted-foreground">Así viene el mes. Abrí el copiloto con ⌘K para preguntar cualquier cosa.</p>
       </div>
+
+      {canSeeOrders && <OrderBoard canWrite={!!me?.permissions.includes('orders.order.write')} />}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi loading={isLoading} icon={TrendingUp} title="Facturación del mes" value={money(k?.revenue_mtd)}
