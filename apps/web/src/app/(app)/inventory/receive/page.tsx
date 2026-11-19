@@ -15,6 +15,8 @@ import { optNumber, optText } from '@/lib/form';
 import { useMe } from '@/lib/hooks';
 import { fetchBlob } from '@/lib/api';
 import { useReceiveStock, useWarehouses } from '@/lib/inventory';
+import { useSuppliers } from '@/lib/purchasing';
+import { today } from '@/lib/supplier-accounts';
 import { SOURCE_LABEL, useConfirmPendingReceipt, useDiscardPendingReceipt, usePendingReceipt, usePendingReceipts, useReadReceipt } from '@/lib/receipts';
 import { money } from '@/lib/utils';
 
@@ -53,7 +55,10 @@ function ReceiveForm() {
   const discard = useDiscardPendingReceipt(pendingId ?? '');
   const { data: pendingList } = usePendingReceipts(!pendingId);
   const fileInput = useRef<HTMLInputElement>(null);
+  const { data: suppliers } = useSuppliers();
   const [warehouseId, setWarehouseId] = useState('');
+  const [supplierId, setSupplierId] = useState<string | null>(null);
+  const [documentDate, setDocumentDate] = useState(today());
   const [reference, setReference] = useState('');
   const [updateCost, setUpdateCost] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
@@ -64,9 +69,15 @@ function ReceiveForm() {
   useEffect(() => {
     if (!warehouseId && warehouses?.length) setWarehouseId(warehouses[0].id);
   }, [warehouses, warehouseId]);
+  // Hoy se compra a un solo proveedor: queda elegido salvo que el remito diga otro.
+  const activeSuppliers = suppliers?.filter((s) => s.isActive) ?? [];
+  useEffect(() => {
+    if (supplierId === null && !pendingId && suppliers) setSupplierId(activeSuppliers.length === 1 ? activeSuppliers[0].id : '');
+  }, [suppliers, supplierId, pendingId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyReading = (r: ReceiptReading, from: string) => {
     if (r.reference) setReference(r.reference);
+    if (r.documentDate) setDocumentDate(r.documentDate.slice(0, 10));
     setLines((prev) => {
       const read = r.lines.map((l) => ({
         variantId: l.variantId,
@@ -88,6 +99,7 @@ function ReceiveForm() {
     if (!pending.data || applied.current === pending.data.id) return;
     applied.current = pending.data.id;
     const d = pending.data;
+    setSupplierId(d.supplier?.id ?? (activeSuppliers.length === 1 ? activeSuppliers[0].id : ''));
     applyReading(d.reading, `${SOURCE_LABEL[d.source]}${d.supplier ? ` · ${d.supplier.name}` : ''}${d.sender ? ` · ${d.sender}` : ''}`);
     if (d.hasImage) {
       fetchBlob(`/receipts/pending/${d.id}/image`).then((b) => setPreview(URL.createObjectURL(b))).catch(() => undefined);
@@ -113,7 +125,7 @@ function ReceiveForm() {
       if (unitCost !== undefined && (Number.isNaN(unitCost) || unitCost < 0)) return setError(`Costo inválido en ${l.sku}`);
       out.push({ variantId: l.variantId, quantity, lotCode: optText(l.lotCode), expiresAt: optText(l.expiresAt), unitCost });
     }
-    const input = { warehouseId, reference: optText(reference), updateCost, lines: out };
+    const input = { warehouseId, supplierId: supplierId || undefined, documentDate: documentDate || undefined, reference: optText(reference), updateCost, lines: out };
     const done = { onSuccess: () => router.push('/inventory'), onError: (e: Error) => setError(e.message) };
     if (pendingId) confirm.mutate(input, done);
     else receive.mutate(input, done);
@@ -165,8 +177,17 @@ function ReceiveForm() {
                   {warehouses?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </Select>
               </Field>
+              <Field label="Proveedor" htmlFor="supplier" hint={supplierId ? 'Queda como compra a pagar en Compras → Pagos a proveedores' : undefined}>
+                <Select id="supplier" value={supplierId ?? ''} onChange={(e) => setSupplierId(e.target.value)}>
+                  <option value="">Sin proveedor (no queda deuda)</option>
+                  {suppliers?.filter((s) => s.isActive || s.id === supplierId).map((s) => <option key={s.id} value={s.id}>{s.legalName}</option>)}
+                </Select>
+              </Field>
               <Field label="Remito o factura del proveedor" htmlFor="reference">
                 <Input id="reference" value={reference} placeholder="0001-00012345" onChange={(e) => setReference(e.target.value)} />
+              </Field>
+              <Field label="Fecha del remito" htmlFor="document-date">
+                <Input id="document-date" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
               </Field>
               {canSeeCost && (
                 <label className="flex items-end gap-2 pb-2 text-sm">

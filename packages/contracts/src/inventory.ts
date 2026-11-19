@@ -14,8 +14,9 @@ export const receiveLineSchema = z.object({
 
 export const receiveStockSchema = z.object({
   warehouseId: z.string().uuid(),
-  supplierId: z.string().uuid().optional(),
+  supplierId: z.string().uuid().optional(), // con proveedor, el ingreso queda como compra en su cuenta (Compras → Pagos)
   reference: z.string().max(120).optional(), // remito o factura del proveedor
+  documentDate: z.string().date().optional(), // fecha del remito (la de la compra); si falta, hoy
   updateCost: z.boolean().default(false), // el costo del ingreso pasa a ser el costo vigente
   lines: z.array(receiveLineSchema).min(1).max(500),
 });

@@ -4,6 +4,7 @@ import { PERMISSIONS } from '@spiceos/contracts';
 import { DomainEvent } from '../../shared/domain/domain-event';
 import { BusinessRuleError, NotFoundError } from '../../shared/domain/errors';
 import type { Tx } from '../../shared/prisma/prisma.service';
+import { round2 } from '../../shared/domain/money';
 import { RequestContextStore } from '../../shared/tenancy/request-context';
 import { UnitOfWork, UowScope } from '../../shared/unit-of-work';
 import { ProductsService } from '../catalog/application/products.service';
@@ -93,10 +94,18 @@ export class InventoryService {
     });
   }
 
-  /** Ingreso de mercadería: crea lotes, suma stock y opcionalmente actualiza el costo vigente. */
-  receive(input: ReceiveStockInput, reason = 'Ingreso de mercadería') {
+  /**
+   * Ingreso de mercadería: crea lotes, suma stock y opcionalmente actualiza el costo vigente.
+   * Con proveedor, además queda la compra en su cuenta (lo que se le debe) para registrarle el pago.
+   */
+  receive(input: ReceiveStockInput, reason = 'Ingreso de mercadería', opts: { pendingReceiptId?: string } = {}) {
+    const ctx = RequestContextStore.get();
     return this.uow.run(async (tx, scope) => {
       await this.assertWarehouse(tx, input.warehouseId);
+      if (input.supplierId && !(await tx.supplier.findFirst({ where: { id: input.supplierId }, select: { id: true } }))) {
+        throw new NotFoundError('Proveedor', input.supplierId);
+      }
+      let total = 0;
       const variants = await this.variantsById(tx, input.lines.map((l) => l.variantId));
       const received: { sku: string; quantity: number; lot: string | null }[] = [];
       for (const line of input.lines) {
@@ -119,10 +128,29 @@ export class InventoryService {
           await this.products.applyCost(tx, scope, line.variantId, line.unitCost, 'purchase');
           v.cost = line.unitCost;
         }
+        total += line.quantity * (line.unitCost ?? v.cost);
         received.push({ sku: v.sku, quantity: line.quantity, lot: lot?.code ?? null });
       }
-      scope.auditLog({ action: 'stock.receive', entityType: 'warehouse', entityId: input.warehouseId, after: { reference: input.reference, lines: received } });
-      return { received: received.length };
+      let purchaseId: string | undefined;
+      total = round2(total);
+      if (input.supplierId && total > 0) {
+        const purchase = await tx.supplierPurchase.create({
+          data: {
+            tenantId: ctx.tenantId,
+            supplierId: input.supplierId,
+            date: input.documentDate ? new Date(`${input.documentDate}T00:00:00Z`) : new Date(new Date().toISOString().slice(0, 10)),
+            reference: input.reference ?? null,
+            total,
+            source: 'RECEIPT',
+            pendingReceiptId: opts.pendingReceiptId ?? null,
+            createdBy: ctx.userId,
+          },
+          select: { id: true },
+        });
+        purchaseId = purchase.id;
+      }
+      scope.auditLog({ action: 'stock.receive', entityType: 'warehouse', entityId: input.warehouseId, after: { reference: input.reference, supplierId: input.supplierId, purchaseId, total, lines: received } });
+      return { received: received.length, purchaseId, total };
     });
   }
 
