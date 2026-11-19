@@ -105,10 +105,40 @@ export const createQuoteSchema = z.object({
   opportunityId: z.string().uuid().optional(),
   branchId: z.string().uuid(),
   validDays: z.number().int().min(1).max(90).default(15),
+  /** Igual que en el pedido: con factura suma IVA solo como Responsable Inscripto. */
+  withInvoice: z.boolean().default(false),
   notes: z.string().max(2000).optional(),
   lines: z.array(quoteLineSchema).min(1),
 });
 export type CreateQuoteInput = z.infer<typeof createQuoteSchema>;
+
+/** Presupuestos todavía no aceptados: se reemplazan las líneas y se recalculan los precios. */
+export const updateQuoteSchema = createQuoteSchema
+  .pick({ customerId: true, validDays: true, withInvoice: true, notes: true, lines: true })
+  .partial()
+  .extend({ version: z.number().int().positive() });
+export type UpdateQuoteInput = z.infer<typeof updateQuoteSchema>;
+
+export const quoteListQuerySchema = z.object({
+  status: z.enum(['DRAFT', 'PENDING_APPROVAL', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED']).optional(),
+  customerId: z.string().uuid().optional(),
+  q: z.string().optional(),
+});
+export type QuoteListQuery = z.infer<typeof quoteListQuerySchema>;
+
+/** Marcar enviado, rechazado (con motivo) o volver a borrador. Aceptar es pasarlo a pedido. */
+export const quoteStatusSchema = z.object({
+  status: z.enum(['DRAFT', 'SENT', 'REJECTED']),
+  reason: z.string().max(500).optional(),
+});
+export type QuoteStatusInput = z.infer<typeof quoteStatusSchema>;
+
+/** Pasar un presupuesto a pedido: queda en borrador con los precios presupuestados. */
+export const convertQuoteSchema = z.object({
+  warehouseId: z.string().uuid().optional(),
+  requestedDate: z.string().date().optional(),
+});
+export type ConvertQuoteInput = z.infer<typeof convertQuoteSchema>;
 
 export const createOrderSchema = z.object({
   customerId: z.string().uuid(),

@@ -13,5 +13,6 @@ import { WhatsappWebOrdersConsumer } from './whatsapp-web-orders.consumer';
   imports: [CrmModule, CatalogModule, InventoryModule, PurchasingModule],
   controllers: [OrdersController, PublicOrdersController],
   providers: [OrdersService, WebOrdersService, WhatsappWebOrdersConsumer],
+  exports: [OrdersService],
 })
 export class OrdersModule {}
