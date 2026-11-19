@@ -527,6 +527,8 @@ model Quote {
   taxTotal      Decimal     @default(0) @map("tax_total") @db.Decimal(18, 4)
   total         Decimal     @default(0) @db.Decimal(18, 4)
   validUntil    DateTime?   @map("valid_until") @db.Date
+  withInvoice   Boolean     @default(false) @map("with_invoice")
+  rejectReason  String?     @map("reject_reason")
   notes         String?
   requiresApproval Boolean  @default(false) @map("requires_approval")
   approvedBy    String?     @map("approved_by") @db.Uuid
