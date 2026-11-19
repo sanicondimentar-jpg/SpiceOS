@@ -6,12 +6,23 @@ import { Injectable } from '@nestjs/common';
 import { RequirePermissions } from '../../shared/auth/decorators';
 import { AiTool } from '../../shared/ai/ai-tool.decorator';
 import { ExecutiveService } from './executive.service';
+import { InsightsService } from './insights.service';
 
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @Controller('analytics')
 export class AnalyticsController {
-  constructor(private readonly executive: ExecutiveService) {}
+  constructor(
+    private readonly executive: ExecutiveService,
+    private readonly insightsService: InsightsService,
+  ) {}
+
+  /** Pantalla Inteligencia: ventas, productos y clientes del período elegido. */
+  @Get('insights')
+  @RequirePermissions(PERMISSIONS.analytics.executive)
+  insights(@Query('from') from: string, @Query('to') to: string) {
+    return this.insightsService.insights({ from, to });
+  }
 
   @Get('executive')
   @RequirePermissions(PERMISSIONS.analytics.executive)
