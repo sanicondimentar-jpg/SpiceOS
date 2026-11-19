@@ -10,6 +10,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { date, money, number } from '@/lib/utils';
 import { useCustomer360, useMe } from '@/lib/hooks';
 import { ContactsCard } from '@/components/crm/contacts-card';
+import { CustomerDetailsCard } from '@/components/crm/customer-details-card';
+import { CustomerOrdersCard } from '@/components/crm/customer-orders-card';
+
+const MISSING_LABEL: Record<string, string> = { phone: 'el teléfono', address: 'la dirección' };
 
 /** Customer 360: todo lo que la empresa sabe de un cliente, en una pantalla. */
 export default function Customer360Page({ params }: { params: Promise<{ id: string }> }) {
@@ -19,6 +23,8 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
   if (isLoading || !data) return <Skeleton className="mx-auto h-96 max-w-7xl" />;
   const { customer: c, kpis } = data;
   const risk = c.account?.riskAssessments?.[0];
+  const missing: string[] = data.missing ?? [];
+  const canWrite = !!me?.permissions.includes('crm.customer.write');
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -30,13 +36,24 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
           </p>
         </div>
         <div className="ml-auto flex gap-2">
-          <Button variant="outline" size="sm"><Phone className="h-4 w-4" /> Llamar</Button>
+          {c.phone ? (
+            <Button asChild variant="outline" size="sm"><a href={`tel:${c.phone}`}><Phone className="h-4 w-4" /> Llamar</a></Button>
+          ) : (
+            <Button variant="outline" size="sm" disabled><Phone className="h-4 w-4" /> Llamar</Button>
+          )}
           <Button variant="outline" size="sm"><MessageCircle className="h-4 w-4" /> WhatsApp</Button>
           <Button asChild size="sm">
             <Link href={`/orders/new?customerId=${c.id}&customerName=${encodeURIComponent(c.tradeName ?? c.legalName)}`}><ShoppingCart className="h-4 w-4" /> Nuevo pedido</Link>
           </Button>
         </div>
       </div>
+
+      {missing.length > 0 && (
+        <div role="status" className="rounded-md border border-warning bg-warning/10 px-4 py-3 text-sm">
+          <span className="font-medium">Ficha para completar:</span> falta {missing.map((m) => MISSING_LABEL[m] ?? m).join(' y ')}.
+          {c.source === 'whatsapp' || c.source === 'web' ? ` Se creó sola desde ${c.source === 'web' ? 'un pedido web' : 'WhatsApp'}.` : ''}
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Stat title="Compras 12 meses" value={money(kpis.revenue12m)} />
@@ -47,7 +64,9 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <div className="space-y-4 lg:col-span-2">
+        <CustomerOrdersCard customerId={id} canSeeInvoices={!!me?.permissions.includes('invoicing.invoice.read')} />
+        <Card>
           <CardHeader><CardTitle>Actividad</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {data.timeline.length === 0 && <p className="text-sm text-muted-foreground">Sin actividad registrada.</p>}
@@ -60,9 +79,11 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
             ))}
           </CardContent>
         </Card>
+        </div>
 
         <div className="space-y-4">
-          <ContactsCard customerId={id} canWrite={!!me?.permissions.includes('crm.customer.write')} />
+          <CustomerDetailsCard customer={c} missing={missing} canWrite={canWrite} />
+          <ContactsCard customerId={id} canWrite={canWrite} />
           <Card>
             <CardHeader><CardTitle>Riesgo financiero</CardTitle></CardHeader>
             <CardContent className="text-sm">

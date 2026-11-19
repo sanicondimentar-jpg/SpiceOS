@@ -180,6 +180,8 @@ export class OrdersService {
         await this.crm.assertCanOrder(tx, customerId);
         if (order.createdCustomer) await this.crm.discardWebProspect(tx, scope, order.customerId, id);
         Object.assign(data, { customerId, createdCustomer: false });
+        // El teléfono con el que se hizo el pedido queda en la ficha del cliente elegido.
+        await this.crm.attachPhone(tx, scope, customerId, order.contactPhone, order.contactName);
       }
       if (input.lines) {
         const { priceListId } = await this.crm.assertCanOrder(tx, customerId);

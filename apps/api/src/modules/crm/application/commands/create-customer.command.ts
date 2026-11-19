@@ -22,14 +22,16 @@ export class CreateCustomerHandler implements ICommandHandler<CreateCustomerComm
     const ctx = RequestContextStore.get();
     return this.uow.run(async (tx, scope) => {
       const code = await this.customers.nextCode(tx);
-      const customer = Customer.create({ ...input, tenantId: ctx.tenantId, code, ownerId: input.ownerId ?? ctx.userId });
+      const { address, ...data } = input;
+      const customer = Customer.create({ ...data, tenantId: ctx.tenantId, code, ownerId: input.ownerId ?? ctx.userId });
       const { taxId } = customer.snapshot();
       if (taxId && (await tx.customer.findFirst({ where: { taxId }, select: { id: true } }))) {
         throw new ConflictError(`Ya existe un cliente con CUIT ${taxId}`);
       }
       await this.customers.insert(tx, customer, ctx.actor);
+      if (address) await this.customers.saveMainAddress(tx, ctx.tenantId, customer.id, address);
       scope.track(customer);
-      scope.auditLog({ action: 'customer.create', entityType: 'customer', entityId: customer.id, after: customer.snapshot() });
+      scope.auditLog({ action: 'customer.create', entityType: 'customer', entityId: customer.id, after: { ...customer.snapshot(), address } });
       return { id: customer.id, code };
     });
   }

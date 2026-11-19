@@ -58,9 +58,33 @@ export class CrmFacade {
     return res.count > 0;
   }
 
+  /**
+   * Deja guardado en la ficha un teléfono que se asoció al cliente (chat de WhatsApp vinculado a mano,
+   * pedido web reasignado). Si la ficha no tenía teléfono pasa a ser el principal; si tenía otro,
+   * se agrega como contacto para que los próximos mensajes o pedidos de ese número lo reconozcan.
+   */
+  async attachPhone(tx: Tx, scope: UowScope, customerId: string, phone: string | null | undefined, name?: string | null): Promise<void> {
+    const variants = phoneVariants(phone);
+    if (!variants.length) return;
+    const customer = await this.customers.findById(tx, customerId);
+    if (!customer) return;
+    const ctx = RequestContextStore.get();
+    if (customer.setPhoneIfMissing(variants[0])) {
+      await this.customers.update(tx, customer, ctx.actor);
+      scope.track(customer);
+      scope.auditLog({ action: 'customer.update', entityType: 'customer', entityId: customerId, after: { phone: variants[0] } });
+      return;
+    }
+    if (variants.includes(customer.snapshot().phone ?? '')) return;
+    const known = await tx.contact.findFirst({ where: { customerId, phone: { in: variants }, deletedAt: null }, select: { id: true } });
+    if (known) return;
+    await tx.contact.create({ data: { tenantId: ctx.tenantId, customerId, fullName: name?.trim() || 'Otro teléfono', phone: variants[0] } });
+    scope.auditLog({ action: 'contact.create', entityType: 'customer', entityId: customerId, after: { phone: variants[0], name } });
+  }
+
   createProspect(name: string, phone: string): Promise<{ id: string; code: string }> {
     return this.commands.execute(
-      new CreateCustomerCommand({ legalName: name, phone, source: 'whatsapp', paymentTermsDays: 0, tags: ['whatsapp'] }),
+      new CreateCustomerCommand({ legalName: name, phone, source: 'whatsapp', paymentTermsDays: 0, tags: ['whatsapp'], deliveryDays: [] }),
     );
   }
 }

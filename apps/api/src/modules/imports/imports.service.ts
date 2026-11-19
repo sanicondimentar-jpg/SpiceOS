@@ -108,7 +108,7 @@ export class ImportsService {
     const input = m.input!;
     if (match) {
       // Solo se pisan los campos que vinieron en la planilla.
-      const changes = Object.fromEntries(Object.entries(input).filter(([k, v]) => v !== undefined && k !== 'source' && !(k === 'tags' && !(v as string[]).length)));
+      const changes = Object.fromEntries(Object.entries(input).filter(([k, v]) => v !== undefined && k !== 'source' && !(Array.isArray(v) && !v.length)));
       await this.commands.execute(new UpdateCustomerCommand(match.id, { ...changes, version: match.version }));
       return;
     }

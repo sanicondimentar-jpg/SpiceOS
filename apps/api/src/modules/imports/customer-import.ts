@@ -1,4 +1,4 @@
-import { createCustomerSchema, type CreateCustomerInput, type ImportRowError } from '@spiceos/contracts';
+import { WEEKDAYS, createCustomerSchema, type CreateCustomerInput, type ImportRowError, type Weekday } from '@spiceos/contracts';
 import { normalizePhone, normalizeTaxId } from '../crm/domain/customer';
 import { normalizeHeader, parseNumber, type SheetRow } from './spreadsheet';
 
@@ -11,6 +11,11 @@ export const CUSTOMER_COLUMNS: Record<string, string[]> = {
   industry: ['rubro', 'actividad', 'industria', 'tipo de cliente'],
   phone: ['teléfono', 'telefono', 'tel', 'celular', 'whatsapp', 'móvil', 'movil'],
   email: ['email', 'e-mail', 'mail', 'correo'],
+  street: ['dirección', 'direccion', 'domicilio', 'calle', 'dirección de entrega', 'direccion de entrega'],
+  city: ['localidad', 'ciudad', 'partido', 'barrio'],
+  province: ['provincia'],
+  deliveryDays: ['días de entrega', 'dias de entrega', 'días de recepción', 'dias de recepcion', 'días de atención', 'dias de atencion', 'días', 'dias'],
+  deliveryHours: ['horario', 'horario de entrega', 'horario de recepción', 'horario de recepcion', 'horario de atención', 'horario de atencion'],
   paymentTermsDays: ['plazo', 'plazo de pago', 'días de pago', 'dias de pago', 'condición de pago', 'condicion de pago'],
   creditLimit: ['límite de crédito', 'limite de credito', 'crédito', 'credito'],
   priceList: ['lista', 'lista de precios'],
@@ -21,7 +26,8 @@ export const CUSTOMER_COLUMNS: Record<string, string[]> = {
 };
 
 export const CUSTOMER_TEMPLATE_HEADERS = [
-  'Razón social', 'Nombre de fantasía', 'CUIT', 'Condición IVA', 'Rubro', 'Teléfono', 'Email',
+  'Razón social', 'Nombre de fantasía', 'CUIT', 'Condición IVA', 'Rubro', 'Teléfono', 'Dirección', 'Localidad', 'Provincia',
+  'Días de entrega', 'Horario', 'Email',
   'Plazo de pago', 'Límite de crédito', 'Lista de precios', 'Vendedor', 'Contacto', 'Cargo', 'Etiquetas',
 ];
 
@@ -93,6 +99,13 @@ export function mapCustomerRow({ row, values }: SheetRow, lookups: CustomerLooku
 
   if (values.phone && !normalizePhone(values.phone)) err('phone', `Teléfono inválido: ${values.phone}`);
 
+  let deliveryDays: Weekday[] = [];
+  if (values.deliveryDays) {
+    const parsed = parseWeekdays(values.deliveryDays);
+    if (!parsed) err('deliveryDays', `Días no reconocidos: ${values.deliveryDays} (ej.: "lunes a viernes", "mar, jue")`);
+    else deliveryDays = parsed;
+  }
+
   const candidate = {
     legalName: values.legalName,
     tradeName: values.tradeName,
@@ -101,6 +114,9 @@ export function mapCustomerRow({ row, values }: SheetRow, lookups: CustomerLooku
     industry: values.industry,
     phone: values.phone,
     email: values.email?.toLowerCase(),
+    address: values.street || values.city ? { street: values.street ?? '', city: values.city ?? '', province: values.province || undefined } : undefined,
+    deliveryDays,
+    deliveryHours: values.deliveryHours,
     ownerId,
     priceListId,
     paymentTermsDays,
@@ -111,7 +127,7 @@ export function mapCustomerRow({ row, values }: SheetRow, lookups: CustomerLooku
   const parsed = createCustomerSchema.safeParse(candidate);
   if (!parsed.success) {
     for (const issue of parsed.error.issues) {
-      const field = String(issue.path[0] ?? '');
+      const field = issue.path[0] === 'address' ? String(issue.path[1] ?? 'street') : String(issue.path[0] ?? '');
       if (errors.some((e) => e.field === field)) continue;
       err(field, field === 'legalName' && !values.legalName ? 'Falta la razón social' : `${field}: ${issue.message}`);
     }
@@ -121,4 +137,42 @@ export function mapCustomerRow({ row, values }: SheetRow, lookups: CustomerLooku
     ? { fullName: values.contactName, position: values.contactPosition, phone: values.phone, email: values.email?.toLowerCase() }
     : undefined;
   return { row, input: errors.length ? undefined : parsed.data, contact, errors };
+}
+
+const DAY_PREFIX: [RegExp, Weekday][] = [
+  [/^lu/, 'LUN'],
+  [/^ma/, 'MAR'],
+  [/^mi/, 'MIE'],
+  [/^ju/, 'JUE'],
+  [/^vi/, 'VIE'],
+  [/^sa/, 'SAB'],
+  [/^do/, 'DOM'],
+];
+const toDay = (word: string) => DAY_PREFIX.find(([re]) => re.test(word))?.[1];
+
+/** "lunes a viernes", "mar, jue y sáb", "lun-mie" → días. null si alguna palabra no es un día. */
+export function parseWeekdays(text: string): Weekday[] | null {
+  const norm = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\./g, '');
+  const days = new Set<Weekday>();
+  for (const part of norm.split(/[,;/]|\s+y\s+/).map((p) => p.trim()).filter(Boolean)) {
+    const range = part.split(/\s+a\s+|\s*-\s*/);
+    if (range.length === 2) {
+      const [from, to] = range.map((w) => toDay(w.trim()));
+      if (!from || !to) return null;
+      const i = WEEKDAYS.indexOf(from);
+      const j = WEEKDAYS.indexOf(to);
+      for (let k = i; ; k = (k + 1) % 7) {
+        days.add(WEEKDAYS[k]);
+        if (k === j) break;
+      }
+      continue;
+    }
+    const words = part.split(/\s+/);
+    for (const w of words) {
+      const d = toDay(w);
+      if (!d) return null;
+      days.add(d);
+    }
+  }
+  return days.size ? WEEKDAYS.filter((d) => days.has(d)) : null;
 }

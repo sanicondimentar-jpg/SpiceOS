@@ -281,6 +281,8 @@ model Customer {
   phone            String? // E.164; clave para asociar WhatsApp
   email            String?        @db.Citext
   website          String?
+  deliveryDays     String[]       @default([]) @map("delivery_days") // LUN..DOM: días en que recibe pedidos
+  deliveryHours    String?        @map("delivery_hours") // horario de atención/recepción, texto libre ("8 a 12 y 16 a 19")
   source           String? // whatsapp, web, feria, referido
   tags             String[]       @default([])
   customFields     Json           @default("{}") @map("custom_fields")

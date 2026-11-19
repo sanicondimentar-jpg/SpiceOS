@@ -220,6 +220,18 @@ export class InvoicingService {
     });
   }
 
+  /** Facturas y notas de crédito de un cliente, para su historial de pedidos. */
+  forCustomer(customerId: string) {
+    return this.uow.read(async (tx) => {
+      const rows = await tx.invoice.findMany({
+        where: { account: { customerId }, arcaType: { not: null } },
+        orderBy: [{ issueDate: 'desc' }, { createdAt: 'desc' }],
+        take: 500,
+      });
+      return rows.map((r) => this.summary(r));
+    });
+  }
+
   async pdf(id: string) {
     const { invoice, settings, related } = await this.uow.read(async (tx) => {
       const invoice = await tx.invoice.findFirst({ where: { id, arcaType: { not: null } } });

@@ -25,11 +25,13 @@ export class UpdateCustomerHandler implements ICommandHandler<UpdateCustomerComm
       const customer = await this.customers.findById(tx, id);
       if (!customer) throw new NotFoundError('Cliente', id);
       const before = customer.snapshot();
-      const { version, ...changes } = input;
+      const { version, address, ...changes } = input;
       customer.update(changes, version);
-      await this.customers.update(tx, customer, RequestContextStore.get().actor);
+      const ctx = RequestContextStore.get();
+      await this.customers.update(tx, customer, ctx.actor);
+      if (address) await this.customers.saveMainAddress(tx, ctx.tenantId, id, address);
       scope.track(customer);
-      scope.auditLog({ action: 'customer.update', entityType: 'customer', entityId: id, before, after: customer.snapshot() });
+      scope.auditLog({ action: 'customer.update', entityType: 'customer', entityId: id, before, after: { ...customer.snapshot(), ...(address && { address }) } });
       return { version: customer.version };
     });
   }

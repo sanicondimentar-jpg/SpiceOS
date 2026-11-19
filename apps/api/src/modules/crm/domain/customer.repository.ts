@@ -1,4 +1,5 @@
 import type { Tx } from '../../../shared/prisma/prisma.service';
+import type { CustomerAddressInput } from '@spiceos/contracts';
 import type { Customer } from './customer';
 
 export const CUSTOMER_REPOSITORY = Symbol('CustomerRepository');
@@ -10,4 +11,5 @@ export interface CustomerRepository {
   nextCode(tx: Tx): Promise<string>;
   insert(tx: Tx, customer: Customer, createdBy: string): Promise<void>;
   update(tx: Tx, customer: Customer, updatedBy: string): Promise<void>;
+  saveMainAddress(tx: Tx, tenantId: string, customerId: string, address: CustomerAddressInput): Promise<void>;
 }

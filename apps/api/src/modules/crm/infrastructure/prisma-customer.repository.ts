@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Customer as Row } from '@prisma/client';
+import type { CustomerAddressInput } from '@spiceos/contracts';
 import type { Tx } from '../../../shared/prisma/prisma.service';
 import { ConflictError } from '../../../shared/domain/errors';
 import { Customer } from '../domain/customer';
@@ -38,6 +39,20 @@ export class PrismaCustomerRepository implements CustomerRepository {
     });
     if (res.count === 0) throw new ConflictError('Conflicto de versión al guardar el cliente');
   }
+
+  /** Dirección principal: actualiza la que está marcada (o la primera) o crea una nueva. */
+  async saveMainAddress(tx: Tx, tenantId: string, customerId: string, address: CustomerAddressInput) {
+    const data = {
+      street: address.street,
+      city: address.city,
+      province: address.province,
+      postalCode: address.postalCode ?? null,
+      deliveryNote: address.deliveryNote ?? null,
+    };
+    const current = await tx.customerAddress.findFirst({ where: { customerId }, orderBy: { isDefault: 'desc' }, select: { id: true } });
+    if (current) await tx.customerAddress.update({ where: { id: current.id }, data: { ...data, isDefault: true } });
+    else await tx.customerAddress.create({ data: { ...data, tenantId, customerId, label: 'Principal', isDefault: true } });
+  }
 }
 
 const uuidOrNull = (v: string) => (/^[0-9a-f-]{36}$/i.test(v) ? v : null);
@@ -59,6 +74,8 @@ function toDomain(r: Row): Customer {
     creditLimit: r.creditLimit ? Number(r.creditLimit) : null,
     phone: r.phone,
     email: r.email,
+    deliveryDays: r.deliveryDays,
+    deliveryHours: r.deliveryHours,
     source: r.source,
     tags: r.tags,
     lastOrderAt: r.lastOrderAt,

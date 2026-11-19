@@ -4,10 +4,14 @@ import type { ListQuery } from '@spiceos/contracts';
 import { UnitOfWork } from '../../../../shared/unit-of-work';
 import { NotFoundError } from '../../../../shared/domain/errors';
 import { RequestContextStore } from '../../../../shared/tenancy/request-context';
+import { missingFields } from '../../domain/customer';
+
+/** Fichas a las que les falta teléfono o dirección (las que se crearon solas desde WhatsApp o la web). */
+const INCOMPLETE: Prisma.CustomerWhereInput = { OR: [{ phone: null }, { addresses: { none: {} } }] };
 
 // ---------- Listado paginado ----------
 export class ListCustomersQuery {
-  constructor(readonly query: ListQuery & { status?: string; ownerId?: string; segmentId?: string }) {}
+  constructor(readonly query: ListQuery & { status?: string; ownerId?: string; segmentId?: string; incomplete?: boolean }) {}
 }
 
 @QueryHandler(ListCustomersQuery)
@@ -16,7 +20,8 @@ export class ListCustomersHandler implements IQueryHandler<ListCustomersQuery> {
 
   execute({ query }: ListCustomersQuery) {
     const { branchScope } = RequestContextStore.get();
-    const where: Prisma.CustomerWhereInput = {
+    const digits = query.q?.replace(/\D/g, '') ?? '';
+    const base: Prisma.CustomerWhereInput = {
       deletedAt: null,
       ...(query.status && { status: query.status as Prisma.EnumCustomerStatusFilter['equals'] }),
       ...(query.ownerId && { ownerId: query.ownerId }),
@@ -30,13 +35,15 @@ export class ListCustomersHandler implements IQueryHandler<ListCustomersQuery> {
               { tradeName: { contains: query.q, mode: 'insensitive' } },
               { taxId: { contains: query.q } },
               { code: { equals: query.q } },
+              ...(digits.length >= 4 ? [{ phone: { contains: digits } }] : []),
             ],
           },
         ],
       }),
     };
+    const where: Prisma.CustomerWhereInput = query.incomplete ? { AND: [base, INCOMPLETE] } : base;
     return this.uow.read(async (tx) => {
-      const [items, total] = await Promise.all([
+      const [rows, total, incompleteTotal] = await Promise.all([
         tx.customer.findMany({
           where,
           orderBy: { legalName: 'asc' },
@@ -44,12 +51,40 @@ export class ListCustomersHandler implements IQueryHandler<ListCustomersQuery> {
           take: query.pageSize,
           select: {
             id: true, code: true, legalName: true, tradeName: true, status: true, industry: true,
-            phone: true, lastOrderAt: true, riskScore: true, ownerId: true, tags: true,
+            phone: true, lastOrderAt: true, riskScore: true, ownerId: true, tags: true, source: true,
+            _count: { select: { addresses: true } },
           },
         }),
         tx.customer.count({ where }),
+        tx.customer.count({ where: { AND: [{ deletedAt: null }, INCOMPLETE] } }),
       ]);
-      return { items, total, page: query.page, pageSize: query.pageSize };
+      // Historial de cada cliente de la página: pedidos, cuántos se facturaron (no todos se facturan) y el último.
+      const ids = rows.map((r) => r.id);
+      const stats = ids.length
+        ? await tx.$queryRaw<{ customer_id: string; orders: bigint; invoiced: bigint; last_order: Date | null }[]>`
+            SELECT o.customer_id,
+                   count(*) AS orders,
+                   count(*) FILTER (WHERE EXISTS (
+                     SELECT 1 FROM invoices i
+                     WHERE i.order_id = o.id AND i.arca_type IS NOT NULL AND i.type NOT LIKE 'NC%'
+                       AND i.status <> 'CANCELLED' AND NOT i.testing)) AS invoiced,
+                   max(o.created_at) AS last_order
+            FROM sales_orders o
+            WHERE o.customer_id = ANY(${ids}::uuid[]) AND o.status NOT IN ('DRAFT', 'CANCELLED')
+            GROUP BY o.customer_id`
+        : [];
+      const byId = new Map(stats.map((st) => [st.customer_id, st]));
+      const items = rows.map(({ _count, ...c }) => {
+        const st = byId.get(c.id);
+        return {
+          ...c,
+          lastOrderAt: st?.last_order ?? c.lastOrderAt,
+          orders: Number(st?.orders ?? 0),
+          invoicedOrders: Number(st?.invoiced ?? 0),
+          missing: missingFields({ phone: c.phone, addressCount: _count.addresses }),
+        };
+      });
+      return { items, total, incompleteTotal, page: query.page, pageSize: query.pageSize };
     });
   }
 }
@@ -69,7 +104,7 @@ export class GetCustomer360Handler implements IQueryHandler<GetCustomer360Query>
         where: { id, deletedAt: null },
         include: {
           contacts: { where: { deletedAt: null } },
-          addresses: true,
+          addresses: { orderBy: { isDefault: 'desc' } },
           segments: { include: { segment: true } },
           account: { include: { riskAssessments: { orderBy: { assessedAt: 'desc' }, take: 1 } } },
           priceList: { select: { id: true, name: true } },
@@ -119,6 +154,7 @@ export class GetCustomer360Handler implements IQueryHandler<GetCustomer360Query>
 
       return {
         customer,
+        missing: missingFields({ phone: customer.phone, addressCount: customer.addresses.length }),
         kpis: {
           orders12m: Number(kpis?.orders_12m ?? 0),
           revenue12m: Number(kpis?.revenue_12m ?? 0),

@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { CUSTOMER_COLUMNS, mapCustomerRow } from './customer-import';
+import { CUSTOMER_COLUMNS, mapCustomerRow, parseWeekdays } from './customer-import';
 import { PRODUCT_COLUMNS, PRODUCT_PREFIX_FIELDS, mapProductRow, weightFromName } from './product-import';
 import { parseNumber, parseSpreadsheet } from './spreadsheet';
 
@@ -79,6 +79,35 @@ describe('mapCustomerRow', () => {
 
   it('acepta "contado" como plazo 0', () => {
     expect(mapCustomerRow({ row: 2, values: { legalName: 'X SA', paymentTermsDays: 'Contado' } }, lookups).input?.paymentTermsDays).toBe(0);
+  });
+});
+
+describe('dirección y días de entrega en la planilla de clientes', () => {
+  it.each([
+    ['lunes a viernes', ['LUN', 'MAR', 'MIE', 'JUE', 'VIE']],
+    ['Mar, Jue y Sáb', ['MAR', 'JUE', 'SAB']],
+    ['lun-mie', ['LUN', 'MAR', 'MIE']],
+    ['miércoles', ['MIE']],
+  ])('%s', (text, expected) => expect(parseWeekdays(text)).toEqual(expected));
+
+  it('rechaza días que no entiende', () => expect(parseWeekdays('feriados')).toBeNull());
+
+  it('toma dirección, localidad y horario', () => {
+    const r = mapCustomerRow(
+      { row: 2, values: { legalName: 'Almacén Don José', street: 'Av. Santa Fe 1234', city: 'Martínez', deliveryDays: 'lunes a viernes', deliveryHours: '8 a 12' } },
+      lookups,
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.input).toMatchObject({
+      address: { street: 'Av. Santa Fe 1234', city: 'Martínez', province: 'Buenos Aires' },
+      deliveryDays: ['LUN', 'MAR', 'MIE', 'JUE', 'VIE'],
+      deliveryHours: '8 a 12',
+    });
+  });
+
+  it('pide la localidad si vino la calle sola', () => {
+    const r = mapCustomerRow({ row: 3, values: { legalName: 'X SA', street: 'Calle 1 123' } }, lookups);
+    expect(r.errors.map((e) => e.field)).toEqual(['city']);
   });
 });
 

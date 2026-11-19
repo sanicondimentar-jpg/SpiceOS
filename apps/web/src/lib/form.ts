@@ -27,7 +27,10 @@ export function useZodForm<T>(schema: ZodType<T, ZodTypeDef, unknown>, initial: 
       return result.data;
     }
     const next: Record<string, string> = {};
-    for (const issue of result.error.issues) next[String(issue.path[0])] ??= issue.message;
+    for (const issue of result.error.issues) {
+      next[String(issue.path[0])] ??= issue.message;
+      if (issue.path.length > 1) next[issue.path.join('.')] ??= issue.message; // campos anidados: "address.city"
+    }
     setErrors(next);
     return null;
   };
