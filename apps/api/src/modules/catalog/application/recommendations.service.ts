@@ -6,7 +6,6 @@ import { RequestContextStore } from '../../../shared/tenancy/request-context';
 import { UnitOfWork } from '../../../shared/unit-of-work';
 import {
   DEFAULT_RECOMMENDATIONS,
-  RETAIL_COMBO,
   SEGMENTS,
   SEGMENT_LABELS,
   normalizeSkus,
@@ -14,6 +13,7 @@ import {
   resolveRecommendations,
   type Segment,
 } from '../domain/recommendations';
+import { BASIC_COMBO, COMBOS, priceCombo } from '../domain/combos';
 
 /** Recomendados por tipo de cliente (Configuración → Recomendados). Los leen la web y el asistente de WhatsApp. */
 @Injectable()
@@ -29,6 +29,15 @@ export class RecommendationsService {
     return onlyActive(resolveRecommendations(stored), new Set(variants.map((v) => v.sku.toUpperCase())));
   }
 
+  /** Precio unitario de la lista Minorista por código (los combos son de sobres sueltos). */
+  static async retailPrices(tx: Tx): Promise<Map<string, number>> {
+    const rows = await tx.priceListItem.findMany({
+      where: { minQuantity: 1, priceList: { name: { equals: 'Minorista', mode: 'insensitive' } } },
+      select: { price: true, variant: { select: { sku: true } } },
+    });
+    return new Map(rows.map((r) => [r.variant.sku.toUpperCase(), Number(r.price)]));
+  }
+
   /** Para la pantalla de edición: cada lista con el nombre de cada producto y si está dado de baja. */
   get() {
     return this.uow.read(async (tx) => {
@@ -36,10 +45,11 @@ export class RecommendationsService {
       const lists = resolveRecommendations(stored);
       const variants = await tx.productVariant.findMany({
         where: { product: { deletedAt: null } },
-        select: { sku: true, name: true, isActive: true, product: { select: { name: true, isActive: true } } },
+        select: { id: true, sku: true, name: true, isActive: true, product: { select: { name: true, isActive: true } } },
         orderBy: { sku: 'asc' },
       });
       const bySku = new Map(variants.map((v) => [v.sku.toUpperCase(), v]));
+      const retailPrices = await RecommendationsService.retailPrices(tx);
       const describe = (sku: string) => {
         const v = bySku.get(sku.toUpperCase());
         return { sku, product: v?.product.name ?? null, presentation: v?.name ?? null, active: !!v && v.isActive && v.product.isActive };
@@ -52,7 +62,26 @@ export class RecommendationsService {
           updatedAt: stored.find((x) => x.segment === s)?.updatedAt ?? null,
           items: lists[s].map(describe),
         })),
-        combo: { ...RETAIL_COMBO, items: RETAIL_COMBO.items.map((i) => ({ ...describe(i.sku), quantity: i.quantity })) },
+        combo: { ...BASIC_COMBO, items: BASIC_COMBO.items.map((i) => ({ ...describe(i.sku), quantity: i.quantity })) },
+        /** Combos con el precio de cada sobre dentro del combo (para cargarlos en un pedido). Null si falta algún sobre. */
+        combos: COMBOS.map((c) => {
+          const priced = priceCombo(c, (sku) => (describe(sku).active ? retailPrices.get(sku.toUpperCase()) : null));
+          return {
+            code: c.code,
+            name: c.name,
+            fixedPrice: c.price,
+            firstPurchaseDiscountPct: c.firstPurchaseDiscountPct,
+            price: priced?.price ?? null,
+            listTotal: priced?.listTotal ?? null,
+            items: c.items.map((i) => ({
+              ...describe(i.sku),
+              variantId: bySku.get(i.sku.toUpperCase())?.id ?? null,
+              quantity: i.quantity,
+              unitPrice: priced?.lines.find((l) => l.sku === i.sku)?.unitPrice ?? null,
+              listPrice: retailPrices.get(i.sku.toUpperCase()) ?? null,
+            })),
+          };
+        }),
         /** Para elegir productos: todo lo activo. */
         options: variants
           .filter((v) => v.isActive && v.product.isActive)

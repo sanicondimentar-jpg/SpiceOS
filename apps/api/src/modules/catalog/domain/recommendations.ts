@@ -16,7 +16,7 @@ export const SEGMENT_LABELS: Record<Segment, string> = {
 
 /** Minoristas: sueltos ("-U"). Mayoristas: cajas y bolsas. En el orden en que se muestran. */
 export const DEFAULT_RECOMMENDATIONS: Record<Segment, string[]> = {
-  // Lo del combo básico y después variedad.
+  // Lo del Combo Chef y después variedad.
   MINORISTA: ['179-U', '41-U', '141-U', '60-U', '330-U', '329-U', '373-U', '105-U', '48-U', '82-U', '148-U'],
   // Pimentón, ají, pimienta, orégano, ajo, chimichurri, aves, provenzal, perejil (1 kg); comino y arroz 500 g; laurel.
   ROTISERIA: ['245', '253', '174', '133', '361', '231', '386', '359', '249', '99', '240', '122'],
@@ -31,18 +31,8 @@ export const DEFAULT_RECOMMENDATIONS: Record<Segment, string[]> = {
   PASTELERIA: ['75', '77', '480', '344', '438', '271', '204', '124', '278'],
 };
 
-/** Combo básico para minoristas (definido con Nacho): sobres sueltos de 25 g; el precio sale del catálogo. */
-export const RETAIL_COMBO = {
-  name: 'Combo básico',
-  items: [
-    { sku: '179-U', quantity: 10 }, // Pimienta negra molida, sobre 25 g
-    { sku: '41-U', quantity: 10 }, // Pimentón seleccionado, sobre 25 g
-    { sku: '141-U', quantity: 10 }, // Orégano en hojas, sobre 25 g
-    { sku: '60-U', quantity: 10 }, // Ají molido, sobre 25 g
-  ],
-  /** Descuento sobre el combo solo en la primera compra del cliente. */
-  firstPurchaseDiscountPct: 10,
-};
+/** Los combos para minoristas viven en combos.ts. */
+export { BASIC_COMBO as RETAIL_COMBO } from './combos';
 
 /** Limpia una lista: códigos en mayúscula, sin espacios ni repetidos, en el orden dado. */
 export function normalizeSkus(skus: string[]): string[] {

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError } from '../../../shared/domain/errors';
 import { PrismaService, SystemPrismaService } from '../../../shared/prisma/prisma.service';
-import { RETAIL_COMBO, type Segment } from '../domain/recommendations';
+import { BASIC_COMBO, COMBOS } from '../domain/combos';
+import type { Segment } from '../domain/recommendations';
 import { RecommendationsService } from './recommendations.service';
 
 export interface PublicCatalog {
@@ -11,8 +12,13 @@ export interface PublicCatalog {
   items: { sku: string; prices: Record<string, number> }[];
   /** Códigos recomendados por tipo de cliente, en orden (solo activos). Minorista: sueltos "-U". */
   recommendations: Record<Segment, string[]>;
-  /** Combo básico para minoristas: sobres sueltos y descuento en la primera compra. */
+  /** Combo básico para minoristas (lo leen las versiones de la web anteriores a `combos`). */
   combo: { name: string; items: { sku: string; quantity: number }[]; firstPurchaseDiscountPct: number };
+  /**
+   * Combos para minoristas, en orden. `price` null = suma de los sobres a precio Minorista; con precio fijo,
+   * la web muestra ese precio y manda el combo por su código en el pedido.
+   */
+  combos: { code: string; name: string; items: { sku: string; quantity: number }[]; price: number | null; firstPurchaseDiscountPct: number }[];
 }
 
 /**
@@ -56,7 +62,8 @@ export class PublicCatalogService {
       updatedAt: updatedAt?.toISOString() ?? null,
       items: [...bySku].map(([sku, prices]) => ({ sku, prices })),
       recommendations,
-      combo: { name: RETAIL_COMBO.name, items: RETAIL_COMBO.items.map((i) => ({ ...i })), firstPurchaseDiscountPct: RETAIL_COMBO.firstPurchaseDiscountPct },
+      combo: { name: BASIC_COMBO.name, items: BASIC_COMBO.items.map((i) => ({ ...i })), firstPurchaseDiscountPct: BASIC_COMBO.firstPurchaseDiscountPct },
+      combos: COMBOS.map((c) => ({ code: c.code, name: c.name, items: c.items.map((i) => ({ ...i })), price: c.price, firstPurchaseDiscountPct: c.firstPurchaseDiscountPct })),
     };
   }
 }

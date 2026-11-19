@@ -41,15 +41,22 @@ export function parseWebOrderMessage(text: string | null | undefined, senderPhon
 
   const minorista = /minorista/i.test(field('Modo') ?? '');
   const items: { sku: string; quantity: number }[] = [];
+  const combos: { code: string; quantity: number }[] = [];
   for (let i = 0; i < lines.length; i++) {
     const item = lines[i].trim().match(/^\d+\)\s*\[([^\]]+)\]/);
     if (!item) continue;
     const qty = lines[i + 1]?.trim().match(/^(\d+)\s*[×x]/);
     if (!qty) continue;
     const code = item[1].trim();
+    // Los combos van como "[COMBO-ESENCIAL] Combo Esencial — ...".
+    const combo = code.match(/^COMBO-(.+)$/i);
+    if (combo) {
+      combos.push({ code: combo[1].toUpperCase(), quantity: Number(qty[1]) });
+      continue;
+    }
     items.push({ sku: minorista && !code.endsWith('-U') ? `${code}-U` : code, quantity: Number(qty[1]) });
   }
-  if (!items.length) return null;
+  if (!items.length && !combos.length) return null;
 
   const totalLine = lines.find((l) => /^\*?TOTAL:/i.test(l.trim()));
   const total = totalLine ? Number(totalLine.replace(/[^\d,]/g, '').replace(',', '.')) : undefined;
@@ -74,6 +81,7 @@ export function parseWebOrderMessage(text: string | null | undefined, senderPhon
     notes: notes?.slice(0, 1000),
     mode: minorista ? 'minorista' : 'mayorista',
     lines: items,
+    combos,
     total: Number.isFinite(total) ? total : undefined,
   });
   return parsed.success ? parsed.data : null;

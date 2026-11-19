@@ -92,7 +92,7 @@ export function AssistantSettingsCard() {
           </Field>
         </div>
         <p className="text-xs text-muted-foreground">
-          Ofrece {data.catalogItems} productos activos de la lista mayorista (con los sueltos), {data.catalogInStock} con stock ahora. Zona: GBA Norte y alrededores. A los minoristas les ofrece sueltos y el combo básico (10 sobres de pimienta, pimentón, orégano y ají; 10% en la primera compra).
+          Ofrece {data.catalogItems} productos activos de la lista mayorista (con los sueltos), {data.catalogInStock} con stock ahora. Zona: GBA Norte y alrededores. A los minoristas les ofrece sueltos y los combos: Combo Esencial (10 sobres distintos de 25 g a $10.000) y Combo Chef (10 sobres de pimienta, pimentón, orégano y ají; 10% en la primera compra).
         </p>
         <div className="flex items-center justify-end gap-2">
           {save.error && <p className="mr-auto text-sm text-destructive">{save.error.message}</p>}

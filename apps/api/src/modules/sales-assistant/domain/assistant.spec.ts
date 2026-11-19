@@ -1,4 +1,4 @@
-import { catalogText, comboInfo, comboText, decide, topSellersText, isWebOrderMessage, priceDraft, toTurns, type CatalogItem, type DecisionInput } from './assistant';
+import { catalogText, combosInfo, comboText, decide, topSellersText, isWebOrderMessage, priceDraft, toTurns, type CatalogItem, type DecisionInput } from './assistant';
 
 const now = new Date('2026-11-19T15:00:00Z');
 const base: DecisionInput = {
@@ -62,7 +62,16 @@ const catalog: CatalogItem[] = [
 
 const loose = (sku: string, product: string, price: number): CatalogItem => ({ sku, product, presentation: 'Sobre 25 g', price, unitsPerBox: null, inStock: false, loose: true });
 const comboItems = [loose('179-U', 'Pimienta Negra Molida', 1200), loose('41-U', 'Pimentón Seleccionado', 800), loose('141-U', 'Orégano en Hojas', 1200), loose('60-U', 'Ají Molido', 900)];
-const opts = { minOrder: 50000, retail: false, combos: 0, firstPurchase: false };
+const essentialItems = [
+  loose('159-U', 'Pimienta Blanca Molida', 1500),
+  loose('373-U', 'Ajo en Polvo', 700),
+  loose('105-U', 'Comino Molido', 1200),
+  loose('330-U', 'Chimichurri Seco', 1000),
+  loose('329-U', 'Mezcla para Provenzal', 1100),
+  loose('50-U', 'Adobo para Pizza', 1000),
+  loose('48-U', 'Condimento para Arroz', 1000),
+];
+const opts = { minOrder: 50000, retail: false, combos: [] as { code: string; quantity: number }[], firstPurchase: false };
 
 describe('catálogo para el asistente', () => {
   it('separa mayorista y sueltos, y marca lo que no se ofrece sin hablar de stock', () => {
@@ -76,11 +85,20 @@ describe('catálogo para el asistente', () => {
     expect(text.split('SUELTOS PARA MINORISTAS')[1]).not.toContain('NO OFRECER');
   });
 
-  it('arma el combo con los precios vigentes y el 10% de primera compra', () => {
-    const c = comboInfo(comboItems);
-    expect(c).toMatchObject({ available: true, price: 41000, firstPurchasePrice: 36900 });
+  it('arma el Combo Chef con los precios vigentes y el 10% de primera compra', () => {
+    const chef = combosInfo(comboItems).find((c) => c.code === 'BASICO')!;
+    expect(chef.priced).toMatchObject({ price: 41000, firstPurchasePrice: 36900 });
     expect(comboText(comboItems)).toContain('$ 36.900');
-    expect(comboInfo(comboItems.slice(1)).available).toBe(false);
+    // Al Esencial le faltan sobres: no se ofrece.
+    expect(combosInfo(comboItems).find((c) => c.code === 'ESENCIAL')!.priced).toBeNull();
+    expect(comboText(comboItems)).not.toContain('Combo Esencial');
+    expect(combosInfo(comboItems.slice(1)).every((c) => !c.priced)).toBe(true);
+  });
+
+  it('el Combo Esencial va a precio fijo', () => {
+    const text = comboText([...comboItems, ...essentialItems]);
+    expect(text).toContain('Combo Esencial (código de combo "ESENCIAL")');
+    expect(text).toContain('Precio: $ 10.000 (sueltos suman $ 10.400)');
   });
 });
 
@@ -111,15 +129,27 @@ describe('pedido del asistente', () => {
 
   it('agrega el combo con descuento solo en la primera compra', () => {
     const all = [...catalog, ...comboItems];
-    const first = priceDraft([{ sku: '386-U', quantity: 2 }], all, { ...opts, retail: true, combos: 1, firstPurchase: true });
+    const first = priceDraft([{ sku: '386-U', quantity: 2 }], all, { ...opts, retail: true, combos: [{ code: 'BASICO', quantity: 1 }], firstPurchase: true });
     expect(first.lines.filter((l) => l.fromCombo)).toHaveLength(4);
     expect(first.subtotal).toBe(4600 + 41000);
     expect(first.discountTotal).toBe(4100);
     expect(first.total).toBe(4600 + 36900);
-    const again = priceDraft([], all, { ...opts, retail: true, combos: 2, firstPurchase: false });
+    const again = priceDraft([], all, { ...opts, retail: true, combos: [{ code: 'basico', quantity: 2 }], firstPurchase: false });
     expect(again.total).toBe(82000);
     expect(again.discountTotal).toBe(0);
-    expect(priceDraft([], catalog, { ...opts, combos: 1 }).comboUnavailable).toBe(true);
+    expect(priceDraft([], catalog, { ...opts, combos: [{ code: 'BASICO', quantity: 1 }] }).comboUnavailable).toEqual(['BASICO']);
+  });
+
+  it('carga el Combo Esencial sobre por sobre y suma justo el precio fijo', () => {
+    const all = [...catalog, ...comboItems, ...essentialItems];
+    const d = priceDraft([{ sku: '179-U', quantity: 1 }], all, { ...opts, retail: true, combos: [{ code: 'ESENCIAL', quantity: 2 }], firstPurchase: true });
+    const combo = d.lines.filter((l) => l.fromCombo === 'Combo Esencial');
+    expect(combo).toHaveLength(10);
+    expect(combo.every((l) => l.quantity === 2 && l.discountPct === 0)).toBe(true);
+    // El suelto de pimienta va aparte, a precio de lista.
+    expect(d.lines.find((l) => l.sku === '179-U' && !l.fromCombo)).toMatchObject({ quantity: 1, lineTotal: 1200 });
+    expect(d.total).toBe(1200 + 20000);
+    expect(priceDraft([], all, { ...opts, combos: [{ code: 'NO-EXISTE', quantity: 1 }] }).comboUnavailable).toEqual(['NO-EXISTE']);
   });
 });
 

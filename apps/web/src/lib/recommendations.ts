@@ -16,7 +16,19 @@ export interface RecommendedItem {
 export interface RecommendationsView {
   segments: { segment: Segment; label: string; isDefault: boolean; updatedAt: string | null; items: RecommendedItem[] }[];
   combo: { name: string; firstPurchaseDiscountPct: number; items: (RecommendedItem & { quantity: number })[] };
+  combos: ComboView[];
   options: { sku: string; product: string; presentation: string }[];
+}
+
+/** Un combo con el precio de cada sobre dentro del combo (precio y unitPrice en null si falta algún sobre). */
+export interface ComboView {
+  code: string;
+  name: string;
+  fixedPrice: number | null;
+  firstPurchaseDiscountPct: number;
+  price: number | null;
+  listTotal: number | null;
+  items: (RecommendedItem & { variantId: string | null; quantity: number; unitPrice: number | null; listPrice: number | null })[];
 }
 
 const KEY = ['catalog', 'recommendations'];
