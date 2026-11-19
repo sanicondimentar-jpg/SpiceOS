@@ -74,6 +74,12 @@ export interface OrderDetail {
   webTotal: number | null;
   createdCustomer: boolean;
   possibleDuplicates: { id: string; number: string; status: OrderStatus; total: number; createdAt: string }[];
+  overdueDebt: { amount: number; oldestDueDate: string; maxDaysOverdue: number } | null;
+  collection: {
+    charge: { id: string; total: number; paid: number; balance: number; dueDate: string; status: 'UNPAID' | 'PARTIAL' | 'PAID' | 'CANCELLED'; daysOverdue: number | null } | null;
+    /** Cobrado para este pedido antes de entregarlo (queda a cuenta hasta la entrega). */
+    prepaid: number;
+  };
   subtotal: number;
   discountTotal: number;
   total: number;
@@ -193,6 +199,8 @@ export interface BoardOrder {
   createdAt: string;
   statusSince: string;
   waitingStock: boolean;
+  /** Deuda vencida del cliente: no se entrega hasta regularizar. */
+  overdueDebt: number;
 }
 
 /** Se refresca solo cada 30 segundos: los pedidos de la web y WhatsApp aparecen sin recargar. */

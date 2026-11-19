@@ -3,15 +3,6 @@ import { Card, CardContent } from '@/components/ui/card';
 
 // Módulos del menú que todavía no tienen pantalla: qué van a hacer y qué se puede usar hoy.
 const PENDING: Record<string, { title: string; summary: string; features: string[]; today?: string }> = {
-  receivables: {
-    title: 'Cobranza',
-    summary: 'Lo que nos deben los clientes y los cobros que recibimos.',
-    features: [
-      'Saldo de cada cliente: pedidos entregados menos lo que ya pagó.',
-      'Registrar cobros (efectivo, transferencia, cheque) con su comprobante, aplicados a uno o varios pedidos.',
-      'Deuda por antigüedad y lista de clientes para llamar.',
-    ],
-  },
   documents: {
     title: 'Documentos',
     summary: 'Archivo de documentos del negocio en un solo lugar.',

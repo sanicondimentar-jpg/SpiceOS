@@ -306,6 +306,8 @@ model Customer {
   account       CustomerAccount?
   conversations Conversation[]
   priceList     PriceList?        @relation(fields: [priceListId], references: [id])
+  charges       CustomerCharge[]
+  payments      CustomerPayment[]
 
   @@unique([tenantId, code])
   @@unique([tenantId, taxId])
@@ -817,6 +819,8 @@ model SalesOrder {
   lines         SalesOrderLine[]
   statusHistory OrderStatusHistory[]
   deliveries    Delivery[]
+  charge        CustomerCharge?
+  payments      CustomerPayment[]
 
   @@unique([tenantId, number])
   @@index([tenantId, customerId, createdAt])
@@ -1401,6 +1405,109 @@ model PaymentAllocation {
 
   @@id([paymentId, invoiceId])
   @@map("payment_allocations")
+}
+
+/// Lo que debe un cliente: un pedido entregado (se crea solo al entregarlo) o una deuda cargada a mano
+/// (deudas de antes del sistema, ajustes). Vence a los días de plazo de la ficha o, si no tiene, los de cobranza (30).
+model CustomerCharge {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  customerId  String    @map("customer_id") @db.Uuid
+  orderId     String?   @unique @map("order_id") @db.Uuid
+  date        DateTime  @db.Date
+  dueDate     DateTime  @map("due_date") @db.Date
+  total       Decimal   @db.Decimal(18, 4)
+  description String?
+  source      String    @default("MANUAL") // ORDER (pedido entregado), MANUAL
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz
+
+  customer    Customer                    @relation(fields: [customerId], references: [id])
+  order       SalesOrder?                 @relation(fields: [orderId], references: [id])
+  allocations CustomerPaymentAllocation[]
+  notices     CollectionNotice[]
+
+  @@index([tenantId, customerId, date])
+  @@index([tenantId, dueDate])
+  @@map("customer_charges")
+}
+
+/// Cobro a un cliente. CASH es dinero en efectivo; el resto (transferencia, Mercado Pago, cheques) es dinero en cuenta.
+/// Un cobro mitad efectivo y mitad transferencia son dos filas con el mismo group_id.
+model CustomerPayment {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  customerId  String    @map("customer_id") @db.Uuid
+  orderId     String?   @map("order_id") @db.Uuid // cobrado para este pedido (aunque todavía no se haya entregado)
+  groupId     String?   @map("group_id") @db.Uuid
+  date        DateTime  @db.Date
+  method      String // CASH, TRANSFER, MERCADOPAGO, CHEQUE, ECHEQ, OTHER
+  amount      Decimal   @db.Decimal(18, 4)
+  reference   String? // número de operación o de cheque
+  notes       String?
+  collectedBy String?   @map("collected_by") // quién recibió la plata
+  proof       Bytes?
+  proofType   String?   @map("proof_type")
+  proofName   String?   @map("proof_name")
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz
+
+  customer    Customer                    @relation(fields: [customerId], references: [id])
+  order       SalesOrder?                 @relation(fields: [orderId], references: [id])
+  allocations CustomerPaymentAllocation[]
+
+  @@index([tenantId, customerId, date])
+  @@index([tenantId, date])
+  @@map("customer_payments")
+}
+
+model CustomerPaymentAllocation {
+  tenantId  String  @map("tenant_id") @db.Uuid
+  paymentId String  @map("payment_id") @db.Uuid
+  chargeId  String  @map("charge_id") @db.Uuid
+  amount    Decimal @db.Decimal(18, 4)
+
+  payment CustomerPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  charge  CustomerCharge  @relation(fields: [chargeId], references: [id])
+
+  @@id([paymentId, chargeId])
+  @@index([chargeId])
+  @@map("customer_payment_allocations")
+}
+
+/// Aviso de cobranza ya mandado (una vez por deuda y tipo): OWNER_BEFORE, OWNER_DUE, CUSTOMER_DUE.
+model CollectionNotice {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  chargeId  String   @map("charge_id") @db.Uuid
+  kind      String
+  status    String // SENT, FAILED, SKIPPED
+  toPhone   String?  @map("to_phone")
+  error     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  charge CustomerCharge @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+
+  @@unique([chargeId, kind])
+  @@map("collection_notices")
+}
+
+/// Configuración → Cobranza.
+model CollectionSettings {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @unique @map("tenant_id") @db.Uuid
+  termsDays        Int      @default(30) @map("terms_days")
+  remindersEnabled Boolean  @default(true) @map("reminders_enabled")
+  daysBefore       Int      @default(10) @map("days_before")
+  notifyPhone      String?  @map("notify_phone") // a quién avisar (Nacho)
+  ownerTemplate    String?  @map("owner_template") // plantilla de Meta para el aviso interno
+  customerTemplate String?  @map("customer_template") // plantilla de Meta para el cliente
+  templateLang     String   @default("es_AR") @map("template_lang")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("collection_settings")
 }
 
 model RiskAssessment {

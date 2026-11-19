@@ -7,3 +7,4 @@ export * from './inventory';
 export * from './messaging';
 export * from './invoicing';
 export * from './supplier-accounts';
+export * from './collections';

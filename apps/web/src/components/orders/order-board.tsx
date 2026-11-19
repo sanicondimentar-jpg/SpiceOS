@@ -74,6 +74,7 @@ function OrderCard({ order: o, canWrite }: { order: BoardOrder; canWrite: boolea
 
   const advance = () => {
     if (!next) return;
+    if (next.to === 'DISPATCHED' && o.overdueDebt > 0 && !confirm(`${o.customer} tiene ${money(o.overdueDebt)} vencidos: no se entrega hasta que regularice. ¿Despachar igual?`)) return;
     if (CONFIRM_TWICE.includes(o.status) && !sure) return setSure(true);
     transition.mutate({ to: next.to }, { onSettled: () => setSure(false) });
   };
@@ -89,9 +90,10 @@ function OrderCard({ order: o, canWrite }: { order: BoardOrder; canWrite: boolea
         <span className="tabular-nums">{money(o.grandTotal)}</span>
         <span title={`En este estado desde ${new Date(o.statusSince).toLocaleString('es-AR')}`}>{ago(o.statusSince)}</span>
       </div>
-      {(o.status === 'DRAFT' || o.waitingStock || o.requestedDate) && (
+      {(o.status === 'DRAFT' || o.waitingStock || o.requestedDate || o.overdueDebt > 0) && (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {o.status === 'DRAFT' && <Badge>{STATUS_LABEL.DRAFT}</Badge>}
+          {o.overdueDebt > 0 && <Badge tone="bad" title="No se entrega hasta que regularice">Deuda vencida {money(o.overdueDebt)}</Badge>}
           {o.waitingStock && <Badge tone="warn"><PackageSearch className="mr-1 h-3 w-3" />Espera mercadería</Badge>}
           {o.requestedDate && <Badge tone={late ? 'bad' : 'neutral'}>{late ? 'Atrasado · ' : 'Entrega '}{date(o.requestedDate)}</Badge>}
         </div>

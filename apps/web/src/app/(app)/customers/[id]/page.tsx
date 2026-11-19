@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { date, money, number } from '@/lib/utils';
 import { useCustomer360, useMe } from '@/lib/hooks';
+import { useCustomerAccount } from '@/lib/collections';
 import { ContactsCard } from '@/components/crm/contacts-card';
 import { CustomerDetailsCard } from '@/components/crm/customer-details-card';
 import { CustomerOrdersCard } from '@/components/crm/customer-orders-card';
@@ -20,6 +21,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
   const { id } = use(params);
   const { data, isLoading } = useCustomer360(id);
   const { data: me } = useMe();
+  const { data: account } = useCustomerAccount(id, !!me?.permissions.includes('receivables.account.read'));
   if (isLoading || !data) return <Skeleton className="mx-auto h-96 max-w-7xl" />;
   const { customer: c, kpis } = data;
   const risk = c.account?.riskAssessments?.[0];
@@ -60,7 +62,13 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
         <Stat title="Margen 12 meses" value={money(kpis.margin12m)} />
         <Stat title="Ticket promedio" value={money(kpis.avgTicket)} />
         <Stat title="Días sin comprar" value={kpis.daysSinceLastOrder ?? '—'} warn={(kpis.daysSinceLastOrder ?? 0) > 60} />
-        <Stat title="Saldo / vencido" value={`${money(c.account?.balance)} / ${money(c.account?.overdue)}`} warn={Number(c.account?.overdue ?? 0) > 0} />
+        <Link href={`/receivables/${id}`} className="block hover:opacity-80" title="Ver cuenta corriente">
+          <Stat
+            title="Debe / vencido"
+            value={account ? `${money(account.balance)} / ${money(account.overdue)}` : '—'}
+            warn={(account?.overdue ?? 0) > 0.005}
+          />
+        </Link>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
