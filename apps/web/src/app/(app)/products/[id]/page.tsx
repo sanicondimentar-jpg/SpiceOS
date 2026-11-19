@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, Select } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAssignCertification, useCertifications, useProduct, useUpdateCost, type VariantRow } from '@/lib/catalog';
+import { useAssignCertification, useCertifications, useProduct, useUpdateCost, useUpdateProduct, useUpdateVariant, type VariantRow } from '@/lib/catalog';
 import { optNumber } from '@/lib/form';
 import { useMe } from '@/lib/hooks';
 import { date, money, number } from '@/lib/utils';
@@ -27,7 +27,8 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
         <Link href="/products" className="text-sm text-muted-foreground hover:underline">← Productos</Link>
         <div className="mt-1 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold">{p.name}</h1>
-          {!p.isActive && <Badge tone="neutral">Inactivo</Badge>}
+          {!p.isActive && <Badge tone="neutral">Dado de baja</Badge>}
+          {canWrite && <ProductStatusButton id={p.id} isActive={p.isActive} />}
         </div>
         <p className="text-sm text-muted-foreground">
           {p.code} · {p.category?.name ?? 'sin categoría'} · origen {p.origin ?? '—'} · vida útil {p.shelfLifeDays ? `${p.shelfLifeDays} días` : '—'}
@@ -44,12 +45,13 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
               <th className="px-4 py-2 text-right font-medium">Peso</th>
               {canSeeCost && <th className="px-4 py-2 text-right font-medium">Costo</th>}
               <th className="px-4 py-2 font-medium">Precios por lista</th>
+              {canWrite && <th className="px-4 py-2"><span className="sr-only">Estado</span></th>}
             </tr>
           </thead>
           <tbody>
             {p.variants.map((v) => (
               <tr key={v.id} className="border-b align-top last:border-0">
-                <td className="px-4 py-3">{v.name}{!v.isActive && <Badge className="ml-2">inactiva</Badge>}</td>
+                <td className={`px-4 py-3 ${v.isActive ? '' : 'text-muted-foreground'}`}>{v.name}{!v.isActive && <Badge className="ml-2">dada de baja</Badge>}</td>
                 <td className="px-4 py-3 font-mono text-xs">{v.sku}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{v.netWeightKg == null ? 'por unidad' : `${number(v.netWeightKg)} kg`}</td>
                 {canSeeCost && <td className="px-4 py-3 text-right"><CostCell variant={v} canWrite={canWrite} /></td>}
@@ -68,6 +70,7 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
                     <span className="text-muted-foreground">Sin precios. <Link className="underline" href="/price-lists">Cargar en una lista</Link></span>
                   )}
                 </td>
+                {canWrite && <td className="px-4 py-3 text-right"><VariantStatusButton variant={v} /></td>}
               </tr>
             ))}
           </tbody>
@@ -76,6 +79,34 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
 
       <Certifications productId={p.id} current={p.certifications} canWrite={canWrite} />
     </div>
+  );
+}
+
+/** Baja = inactivo, no borrado: deja de ofrecerse (pedidos, web, PDF) pero el historial queda. */
+function ProductStatusButton({ id, isActive }: { id: string; isActive: boolean }) {
+  const update = useUpdateProduct(id);
+  const toggle = () => {
+    if (isActive && !window.confirm('¿Dar de baja el producto entero? Deja de aparecer en pedidos, en la web y en la lista de precios. Los pedidos anteriores no cambian.')) return;
+    update.mutate({ isActive: !isActive });
+  };
+  return (
+    <Button variant="outline" size="sm" className="ml-auto" onClick={toggle} disabled={update.isPending}>
+      {isActive ? 'Dar de baja producto' : 'Reactivar producto'}
+    </Button>
+  );
+}
+
+function VariantStatusButton({ variant }: { variant: VariantRow }) {
+  const update = useUpdateVariant();
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled={update.isPending}
+      onClick={() => update.mutate({ variantId: variant.id, isActive: !variant.isActive })}
+    >
+      {variant.isActive ? 'Dar de baja' : 'Reactivar'}
+    </Button>
   );
 }
 

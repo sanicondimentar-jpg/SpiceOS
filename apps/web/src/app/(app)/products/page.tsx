@@ -15,7 +15,8 @@ import { money, number } from '@/lib/utils';
 export default function ProductsPage() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useProducts(q, page);
+  const [showInactive, setShowInactive] = useState(false);
+  const { data, isLoading } = useProducts(q, page, showInactive);
   const { data: me } = useMe();
   const canWrite = me?.permissions.includes('catalog.product.write');
   const canSeeCost = me?.permissions.includes('catalog.cost.read');
@@ -42,6 +43,10 @@ export default function ProductsPage() {
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input className="pl-9" placeholder="Buscar por nombre, código o SKU" aria-label="Buscar productos" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
       </div>
+      <label className="flex w-fit items-center gap-2 text-sm text-muted-foreground">
+        <input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }} />
+        Mostrar también los dados de baja
+      </label>
       <Card className="overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
           <thead className="border-b text-left text-xs text-muted-foreground">
@@ -65,10 +70,11 @@ export default function ProductsPage() {
                   {i === 0 && (
                     <td className="px-4 py-3 align-top" rowSpan={p.variants.length}>
                       <Link href={`/products/${p.id}`} className="font-medium hover:underline">{p.name}</Link>
+                      {!p.isActive && <Badge className="ml-2">dado de baja</Badge>}
                       <div className="text-xs text-muted-foreground">{p.code}{p.category && ` · ${p.category.name}`}</div>
                     </td>
                   )}
-                  <td className="px-4 py-2">{v.name}</td>
+                  <td className={`px-4 py-2 ${v.isActive ? '' : 'text-muted-foreground'}`}>{v.name}{!v.isActive && <Badge className="ml-2">dada de baja</Badge>}</td>
                   <td className="px-4 py-2 font-mono text-xs">{v.sku}</td>
                   {canSeeCost && <td className="px-4 py-2 text-right tabular-nums">{money(v.currentCost)}</td>}
                   <td className="px-4 py-2 text-right tabular-nums">{v.listPrice == null ? <span className="text-muted-foreground">sin precio</span> : money(v.listPrice)}</td>

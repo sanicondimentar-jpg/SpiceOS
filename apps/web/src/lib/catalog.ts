@@ -8,6 +8,7 @@ import type {
   RepriceInput,
   UpdateCostInput,
   UpdateProductInput,
+  UpdateVariantInput,
   VariantInput,
 } from '@spiceos/contracts';
 import { api } from './api';
@@ -80,12 +81,12 @@ export interface RepriceChange {
   belowMinMargin: boolean;
 }
 
-export const useProducts = (q: string, page: number) =>
+export const useProducts = (q: string, page: number, includeInactive = false) =>
   useQuery({
-    queryKey: ['products', q, page],
+    queryKey: ['products', q, page, includeInactive],
     queryFn: () =>
       api<{ items: ProductRow[]; total: number; page: number; pageSize: number; priceList: { id: string; name: string } | null }>(
-        `/catalog/products?q=${encodeURIComponent(q)}&page=${page}&pageSize=50`,
+        `/catalog/products?q=${encodeURIComponent(q)}&page=${page}&pageSize=50${includeInactive ? '&includeInactive=true' : ''}`,
       ),
     placeholderData: (prev) => prev,
   });
@@ -134,6 +135,9 @@ export const useCreateProduct = () =>
 
 export const useUpdateProduct = (id: string) =>
   useCatalogMutation((input: UpdateProductInput) => api(`/catalog/products/${id}`, json('PATCH', input)));
+
+export const useUpdateVariant = () =>
+  useCatalogMutation(({ variantId, ...input }: UpdateVariantInput & { variantId: string }) => api(`/catalog/variants/${variantId}`, json('PATCH', input)));
 
 export const useAddVariant = (productId: string) =>
   useCatalogMutation((input: VariantInput) => api(`/catalog/products/${productId}/variants`, json('POST', input)));
