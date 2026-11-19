@@ -17,7 +17,7 @@ Postgres, Redis, RabbitMQ y Qdrant no publican puertos. MinIO no se instala toda
 3. **DNS.** Dos registros `A` hacia la IP del servidor: `APP_DOMAIN` y `AUTH_DOMAIN` (por ejemplo `sistema.saboracasa.com.ar` y `auth.saboracasa.com.ar`).
 4. **GitHub → Settings → Secrets and variables → Actions.**
    - *Variables*: `SSH_HOST` (IP del servidor), `APP_DOMAIN`, `AUTH_DOMAIN`, `ADMIN_EMAIL` (el mail con el que vas a entrar), `COMPANY_CUIT`.
-   - *Secrets*: `SSH_PRIVATE_KEY` (contenido de `spiceos-deploy`), `ADMIN_INITIAL_PASSWORD` (contraseña provisoria del primer ingreso) y, si querés el copiloto, `ANTHROPIC_API_KEY` y `VOYAGE_API_KEY`.
+   - *Secrets*: `SSH_PRIVATE_KEY` (contenido de `spiceos-deploy`), `ADMIN_INITIAL_PASSWORD` (contraseña provisoria del primer ingreso) y, si querés el copiloto, `ANTHROPIC_API_KEY` y `VOYAGE_API_KEY`. Para Google Drive en Documentos: `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` (cliente OAuth "Aplicación web" con URI de redirección `https://<APP_DOMAIN>/api/v1/integrations/google-drive/callback`).
 5. **Actions → Deploy → Run workflow.** Al terminar, entrar a `https://APP_DOMAIN` con `ADMIN_EMAIL` y la contraseña provisoria: Keycloak pide cambiarla y configurar el código de verificación (Google Authenticator o similar).
 
 Desde ahí cada merge a `main` que pase CI se despliega solo.

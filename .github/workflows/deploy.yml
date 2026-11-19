@@ -116,12 +116,14 @@ jobs:
           ADMIN_INITIAL_PASSWORD: ${{ secrets.ADMIN_INITIAL_PASSWORD }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
           IMAGE_PREFIX="ghcr.io/${GITHUB_REPOSITORY,,}"
           {
             printf 'set -e\n'
             printf 'echo %q | docker login ghcr.io -u %q --password-stdin >/dev/null\n' "$GHCR_TOKEN" "$GITHUB_ACTOR"
-            for v in IMAGE_PREFIX IMAGE_TAG APP_DOMAIN AUTH_DOMAIN ADMIN_EMAIL COMPANY_CUIT ADMIN_INITIAL_PASSWORD ANTHROPIC_API_KEY VOYAGE_API_KEY; do
+            for v in IMAGE_PREFIX IMAGE_TAG APP_DOMAIN AUTH_DOMAIN ADMIN_EMAIL COMPANY_CUIT ADMIN_INITIAL_PASSWORD ANTHROPIC_API_KEY VOYAGE_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET; do
               printf 'export %s=%q\n' "$v" "${!v}"
             done
             printf '/opt/spiceos/infra/prod/deploy.sh\n'

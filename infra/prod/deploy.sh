@@ -2,7 +2,7 @@
 # Despliega (o actualiza) SpiceOS en este servidor. Es idempotente: se puede correr las veces que haga falta.
 # Lo invoca el workflow "Deploy" de GitHub Actions con estas variables:
 #   IMAGE_PREFIX, IMAGE_TAG, APP_DOMAIN, AUTH_DOMAIN, ADMIN_EMAIL, ADMIN_INITIAL_PASSWORD
-#   y opcionales ANTHROPIC_API_KEY, VOYAGE_API_KEY, COMPANY_CUIT.
+#   y opcionales ANTHROPIC_API_KEY, VOYAGE_API_KEY, COMPANY_CUIT, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -71,6 +71,9 @@ set_env CORS_ORIGINS "https://$APP_DOMAIN"
 set_env GOOGLE_REDIRECT_URI "https://$APP_DOMAIN/api/v1/integrations/google-drive/callback"
 [ -n "${ANTHROPIC_API_KEY:-}" ] && set_env ANTHROPIC_API_KEY "$ANTHROPIC_API_KEY"
 [ -n "${VOYAGE_API_KEY:-}" ] && set_env VOYAGE_API_KEY "$VOYAGE_API_KEY"
+# Google Drive (módulo Documentos): cliente OAuth del proyecto de Google Cloud.
+[ -n "${GOOGLE_CLIENT_ID:-}" ] && set_env GOOGLE_CLIENT_ID "$GOOGLE_CLIENT_ID"
+[ -n "${GOOGLE_CLIENT_SECRET:-}" ] && set_env GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET"
 chmod 600 .env
 mkdir -p backups
 

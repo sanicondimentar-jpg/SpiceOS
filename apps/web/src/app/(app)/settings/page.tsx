@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { KeyRound, MessageCircle, Receipt, Sparkles, Wallet } from 'lucide-react';
+import { FolderOpen, KeyRound, MessageCircle, Receipt, Sparkles, Wallet } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
 export default function SettingsPage() {
@@ -46,6 +46,17 @@ export default function SettingsPage() {
             <div>
               <div className="font-medium">Cobranza</div>
               <div className="text-sm text-muted-foreground">Plazo de pago (30 días) y avisos de vencimiento por WhatsApp a vos y a los clientes.</div>
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
+      <Link href="/settings/integrations" className="block">
+        <Card className="hover:bg-accent">
+          <CardContent className="flex items-center gap-3 p-5">
+            <FolderOpen className="h-5 w-5 text-primary" />
+            <div>
+              <div className="font-medium">Google Drive</div>
+              <div className="text-sm text-muted-foreground">Traer a Documentos los archivos de las carpetas de Drive que elijas, y mantenerlos al día solos.</div>
             </div>
           </CardContent>
         </Card>
