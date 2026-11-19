@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { UpdateConversationInput, WhatsappAccountInput } from '@spiceos/contracts';
+import type { AssistantSettingsInput, UpdateConversationInput, WhatsappAccountInput } from '@spiceos/contracts';
 import { api } from './api';
 import type { OrderStatus } from './orders';
 
@@ -14,6 +14,8 @@ export interface ConversationRow {
   unreadCount: number;
   lastMessageAt: string | null;
   windowOpen: boolean;
+  /** El asistente derivó el chat a una persona y nadie respondió todavía. */
+  needsHuman: boolean;
   lastMessage: { text: string | null; type: string; direction: 'INBOUND' | 'OUTBOUND' } | null;
 }
 
@@ -39,6 +41,7 @@ export interface ConversationDetail {
   leadId: string | null;
   windowExpiresAt: string | null;
   windowOpen: boolean;
+  assistant: { state: 'off' | 'active' | 'paused' | 'handoff'; reason: string | null; pausedUntil: string | null };
   customer: { id: string; code: string; name: string; status: string } | null;
   orders: { id: string; number: string; status: OrderStatus; total: number; createdAt: string }[];
   messages: ChatMessage[];
@@ -144,5 +147,37 @@ export const useSaveWhatsappAccount = () => {
   return useMutation({
     mutationFn: (input: WhatsappAccountInput) => api<WhatsappAccountInfo>('/messaging/whatsapp-account', { method: 'PUT', body: JSON.stringify(input) }),
     onSuccess: (data) => qc.setQueryData(['whatsapp-account'], data),
+  });
+};
+
+export interface AssistantSettings {
+  aiConfigured: boolean;
+  connected: boolean;
+  mode: 'OFF' | 'TEST' | 'ON';
+  testPhones: string[];
+  minOrder: number;
+  notes: string | null;
+  catalogItems: number;
+  catalogInStock: number;
+}
+
+export const useAssistantSettings = () =>
+  useQuery({ queryKey: ['whatsapp-assistant'], queryFn: () => api<AssistantSettings>('/messaging/assistant') });
+
+export const useSaveAssistantSettings = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AssistantSettingsInput) => api<AssistantSettings>('/messaging/assistant', { method: 'PUT', body: JSON.stringify(input) }),
+    onSuccess: (data) => qc.setQueryData(['whatsapp-assistant'], data),
+  });
+};
+
+/** Pausar o devolver al asistente un chat. */
+export const useConversationAssistant = (id: string) => {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (action: 'pause' | 'resume') =>
+      api<unknown>(`/messaging/conversations/${id}/assistant`, { method: 'POST', body: JSON.stringify({ action }) }),
+    onSuccess: invalidate,
   });
 };

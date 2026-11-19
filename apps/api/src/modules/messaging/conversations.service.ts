@@ -7,6 +7,21 @@ import { RequestContextStore } from '../../shared/tenancy/request-context';
 import { CrmFacade } from '../crm/crm.facade';
 import { WhatsappClient } from './whatsapp.client';
 
+/** Cuánto se calla el asistente en un chat después de que responde una persona (igual que en sales-assistant). */
+const HUMAN_PAUSE_MS = 12 * 3600_000;
+export const MANUAL_PAUSE = 'Lo pausó una persona del equipo';
+
+/** Estado del asistente en un chat, para la bandeja. */
+function assistantState(
+  mode: string,
+  c: { assistantHandoff: string | null; assistantPausedUntil: Date | null },
+): { state: 'off' | 'active' | 'paused' | 'handoff'; reason: string | null; pausedUntil: Date | null } {
+  if (mode === 'OFF') return { state: 'off', reason: null, pausedUntil: null };
+  if (c.assistantHandoff) return { state: 'handoff', reason: c.assistantHandoff, pausedUntil: null };
+  if (c.assistantPausedUntil && c.assistantPausedUntil > new Date()) return { state: 'paused', reason: 'Respondió una persona', pausedUntil: c.assistantPausedUntil };
+  return { state: 'active', reason: null, pausedUntil: null };
+}
+
 /** Bandeja de WhatsApp: chats, respuesta desde el sistema y vínculo con clientes y pedidos. */
 @Injectable()
 export class ConversationsService {
@@ -38,6 +53,7 @@ export class ConversationsService {
           take: 200,
           include: {
             customer: { select: { id: true, legalName: true, tradeName: true } },
+            account: { select: { assistantMode: true } },
             messages: { orderBy: { sentAt: 'desc' }, take: 1, select: { body: true, type: true, direction: true, transcript: true } },
           },
         }),
@@ -55,6 +71,7 @@ export class ConversationsService {
           unreadCount: c.unreadCount,
           lastMessageAt: c.lastMessageAt,
           windowOpen: !!c.windowExpiresAt && c.windowExpiresAt > now,
+          needsHuman: c.account.assistantMode !== 'OFF' && !!c.assistantHandoff && c.assistantHandoff !== MANUAL_PAUSE,
           lastMessage: c.messages[0]
             ? { text: c.messages[0].body ?? c.messages[0].transcript, type: c.messages[0].type, direction: c.messages[0].direction }
             : null,
@@ -77,6 +94,7 @@ export class ConversationsService {
         where: { id },
         include: {
           customer: { select: { id: true, code: true, legalName: true, tradeName: true, phone: true, status: true } },
+          account: { select: { assistantMode: true } },
           messages: { orderBy: { sentAt: 'desc' }, take: 300 },
         },
       });
@@ -102,6 +120,7 @@ export class ConversationsService {
         leadId: c.leadId,
         windowExpiresAt: c.windowExpiresAt,
         windowOpen: !!c.windowExpiresAt && c.windowExpiresAt > new Date(),
+        assistant: assistantState(c.account.assistantMode, c),
         customer: c.customer && {
           id: c.customer.id,
           code: c.customer.code,
@@ -120,7 +139,7 @@ export class ConversationsService {
           error: m.error,
           intent: m.intent,
           sentAt: m.sentAt,
-          sentBy: m.sentBy === 'whatsapp-app' ? 'Celular' : m.sentBy?.startsWith('agent:') ? 'Copiloto' : (m.sentBy && names.get(m.sentBy)) ?? null,
+          sentBy: m.sentBy === 'whatsapp-app' ? 'Celular' : m.sentBy === 'assistant:whatsapp' ? 'Asistente' : m.sentBy?.startsWith('agent:') ? 'Copiloto' : (m.sentBy && names.get(m.sentBy)) ?? null,
         })),
       };
     });
@@ -157,7 +176,18 @@ export class ConversationsService {
           sentAt: now,
         },
       });
-      await tx.conversation.update({ where: { id }, data: { lastMessageAt: now, unreadCount: 0, status: 'OPEN' } });
+      // Si responde una persona, el asistente se calla en este chat por unas horas.
+      await tx.conversation.update({
+        where: { id },
+        data: {
+          lastMessageAt: now,
+          unreadCount: 0,
+          status: 'OPEN',
+          assistantPausedUntil: new Date(now.getTime() + HUMAN_PAUSE_MS),
+          // Si el asistente lo había derivado, ya lo atendió una persona (la pausa manual queda).
+          ...(conv.assistantHandoff && conv.assistantHandoff !== MANUAL_PAUSE && { assistantHandoff: null, assistantHandoffAt: null }),
+        },
+      });
       scope.auditLog({ action: 'message.send', entityType: 'conversation', entityId: id, after: { messageId: m.id } });
       return { id: m.id, waMessageId: waId };
     });
