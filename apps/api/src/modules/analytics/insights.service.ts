@@ -29,6 +29,22 @@ export interface Totals {
 export class InsightsService {
   constructor(private readonly uow: UnitOfWork) {}
 
+  /** Clientes que dejaron de comprar, sin importar el período (lo usan los avisos de Automatizaciones). */
+  async lapsed() {
+    const rhythm = await this.uow.read((tx) =>
+      tx.$queryRaw<CustomerRhythm[]>`
+        SELECT c.id AS customer_id, coalesce(c.trade_name, c.legal_name) AS name, c.phone,
+               count(*)::int AS orders,
+               to_char(min(coalesce(o.confirmed_at, o.created_at) AT TIME ZONE ${TZ}), 'YYYY-MM-DD') AS first_order,
+               to_char(max(coalesce(o.confirmed_at, o.created_at) AT TIME ZONE ${TZ}), 'YYYY-MM-DD') AS last_order,
+               (sum(o.total) / count(*))::float AS avg_ticket
+        FROM sales_orders o JOIN customers c ON c.id = o.customer_id
+        WHERE o.status::text = ANY(${SOLD}) AND c.deleted_at IS NULL
+        GROUP BY c.id`,
+    );
+    return lapsedCustomers(rhythm, todayInArgentina());
+  }
+
   async insights(period: Period) {
     const { from, to } = validPeriod(period);
     const prev = previousPeriod(from, to);

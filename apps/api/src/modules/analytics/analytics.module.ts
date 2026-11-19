@@ -6,5 +6,6 @@ import { InsightsService } from './insights.service';
 @Module({
   controllers: [AnalyticsController],
   providers: [ExecutiveService, InsightsService, AnalyticsAiTools],
+  exports: [InsightsService],
 })
 export class AnalyticsModule {}

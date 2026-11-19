@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { AlertTriangle, Boxes, TrendingUp, Users, Wallet } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -54,8 +55,9 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Alertas</CardTitle>
+            <Link href="/automation" className="text-xs text-primary hover:underline">Ver avisos</Link>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <Alert icon={Boxes} text={`${number(k?.stock_alerts)} productos bajo punto de pedido`} active={!!k?.stock_alerts} />

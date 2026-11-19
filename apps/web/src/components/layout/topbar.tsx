@@ -1,12 +1,16 @@
 'use client';
 
+import Link from 'next/link';
 import { Bell, LogOut, Menu, Search, Sparkles } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { useMe } from '@/lib/hooks';
+import { useAlerts } from '@/lib/automation';
 
 export function Topbar({ onCopilot, onMenu }: { onCopilot: () => void; onMenu: () => void }) {
   const { data: me } = useMe();
+  const { data: alerts } = useAlerts();
+  const urgent = alerts?.items.filter((a) => a.severity !== 'low').length ?? 0;
   return (
     <header className="flex h-14 items-center gap-3 border-b bg-card px-4 print:hidden">
       <Button variant="ghost" size="icon" aria-label="Menú" className="md:hidden" onClick={onMenu}>
@@ -23,11 +27,15 @@ export function Topbar({ onCopilot, onMenu }: { onCopilot: () => void; onMenu: (
       <Button variant="secondary" size="sm" onClick={onCopilot}>
         <Sparkles className="h-4 w-4" /> Copiloto
       </Button>
-      <Button variant="ghost" size="icon" aria-label="Notificaciones" className="relative">
-        <Bell className="h-4 w-4" />
-        {!!me?.unreadNotifications && (
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" aria-label={`${me.unreadNotifications} sin leer`} />
-        )}
+      <Button asChild variant="ghost" size="icon" className="relative" title="Avisos">
+        <Link href="/automation" aria-label={urgent ? `Avisos: ${urgent} para revisar` : 'Avisos'}>
+          <Bell className="h-4 w-4" />
+          {!!urgent && (
+            <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-[1rem] place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+              {urgent > 99 ? '99+' : urgent}
+            </span>
+          )}
+        </Link>
       </Button>
       <div className="grid h-8 w-8 place-items-center rounded-full bg-muted text-xs font-semibold" title={me?.user.fullName}>
         {me?.user.fullName?.slice(0, 2).toUpperCase() ?? '··'}
