@@ -7,11 +7,12 @@ import { CertificationsService } from './application/certifications.service';
 import { PriceListPdfService } from './application/price-list-pdf.service';
 import { PriceListsService } from './application/price-lists.service';
 import { ProductsService } from './application/products.service';
+import { RecommendationsService } from './application/recommendations.service';
 import { PublicCatalogService } from './application/public-catalog.service';
 
 @Module({
   controllers: [CatalogController, PublicCatalogController],
-  providers: [CatalogFacade, CatalogAiTools, ProductsService, PriceListsService, CertificationsService, PublicCatalogService, PriceListPdfService],
+  providers: [CatalogFacade, CatalogAiTools, ProductsService, PriceListsService, CertificationsService, PublicCatalogService, PriceListPdfService, RecommendationsService],
   exports: [CatalogFacade, ProductsService, PriceListsService],
 })
 export class CatalogModule {}

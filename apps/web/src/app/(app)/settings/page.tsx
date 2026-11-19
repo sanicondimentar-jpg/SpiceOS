@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { KeyRound, MessageCircle, Receipt, Wallet } from 'lucide-react';
+import { KeyRound, MessageCircle, Receipt, Sparkles, Wallet } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
 export default function SettingsPage() {
@@ -24,6 +24,17 @@ export default function SettingsPage() {
             <div>
               <div className="font-medium">WhatsApp</div>
               <div className="text-sm text-muted-foreground">Conectar el número de la empresa para recibir y responder mensajes desde el sistema.</div>
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
+      <Link href="/settings/recommendations" className="block">
+        <Card className="hover:bg-accent">
+          <CardContent className="flex items-center gap-3 p-5">
+            <Sparkles className="h-5 w-5 text-primary" />
+            <div>
+              <div className="font-medium">Productos recomendados</div>
+              <div className="text-sm text-muted-foreground">Lo que la web muestra primero a minoristas y a cada rubro mayorista, y lo que ofrece primero el asistente de WhatsApp.</div>
             </div>
           </CardContent>
         </Card>

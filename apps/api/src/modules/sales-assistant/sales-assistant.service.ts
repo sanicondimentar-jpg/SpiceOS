@@ -9,6 +9,7 @@ import type { Tx } from '../../shared/prisma/prisma.service';
 import { nextNumber } from '../../shared/sequences';
 import { RequestContextStore } from '../../shared/tenancy/request-context';
 import { UnitOfWork } from '../../shared/unit-of-work';
+import { RecommendationsService } from '../catalog/application/recommendations.service';
 import { parseVariant } from '../catalog/domain/price-list-pdf';
 import { CrmFacade } from '../crm/crm.facade';
 import { CollectionsService } from '../receivables/collections.service';
@@ -22,6 +23,7 @@ import {
   type CatalogItem,
   catalogText,
   comboText,
+  recommendedText,
   decide,
   topSellersText,
   type DraftLine,
@@ -234,8 +236,9 @@ export class SalesAssistantService {
   private async reply(conversationId: string) {
     const ctx = RequestContextStore.get();
     const conversation = (await this.loadConversation(conversationId))!;
-    const [catalog, topSellers, history] = await Promise.all([
+    const [catalog, recommended, topSellers, history] = await Promise.all([
       this.uow.read((tx) => this.loadCatalog(tx)),
+      this.uow.read((tx) => RecommendationsService.active(tx)),
       this.uow.read((tx) => this.loadTopSellers(tx)),
       this.uow.read((tx) =>
         tx.message.findMany({
@@ -254,7 +257,7 @@ export class SalesAssistantService {
       { type: 'text', text: ASSISTANT_SYSTEM },
       {
         type: 'text',
-        text: `Catálogo vigente (código, producto, presentación, precio):\n${catalogText(catalog)}\n\n${topSellersText(topSellers)}\n\n${comboText(catalog)}`,
+        text: `Catálogo vigente (código, producto, presentación, precio):\n${catalogText(catalog)}\n\n${topSellersText(topSellers)}\n\n${recommendedText(recommended, catalog)}\n\n${comboText(catalog)}`,
         cache_control: { type: 'ephemeral' },
       },
       {

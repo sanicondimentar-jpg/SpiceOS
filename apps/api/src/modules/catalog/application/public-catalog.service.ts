@@ -1,12 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError } from '../../../shared/domain/errors';
 import { PrismaService, SystemPrismaService } from '../../../shared/prisma/prisma.service';
+import { RETAIL_COMBO, type Segment } from '../domain/recommendations';
+import { RecommendationsService } from './recommendations.service';
 
 export interface PublicCatalog {
   currency: string;
   updatedAt: string | null;
   /** Precio unitario (cantidad mínima 1) por nombre de lista: { "Mayorista": 14400, "Minorista": 900 }. */
   items: { sku: string; prices: Record<string, number> }[];
+  /** Códigos recomendados por tipo de cliente, en orden (solo activos). Minorista: sueltos "-U". */
+  recommendations: Record<Segment, string[]>;
+  /** Combo básico para minoristas: sobres sueltos y descuento en la primera compra. */
+  combo: { name: string; items: { sku: string; quantity: number }[]; firstPurchaseDiscountPct: number };
 }
 
 /**
@@ -24,13 +30,16 @@ export class PublicCatalogService {
     const company = await this.system.company.findUnique({ where: { keycloakOrgId: orgAlias }, select: { id: true, status: true, baseCurrency: true } });
     if (!company || company.status !== 'ACTIVE') throw new NotFoundError('Empresa', orgAlias);
 
-    const rows = await this.prisma.tx(
+    const [rows, recommendations] = await this.prisma.tx(
       (tx) =>
-        tx.priceListItem.findMany({
-          where: { minQuantity: 1, variant: { isActive: true, product: { isActive: true, deletedAt: null } } },
-          select: { price: true, updatedAt: true, priceList: { select: { name: true } }, variant: { select: { sku: true } } },
-          orderBy: { variant: { sku: 'asc' } },
-        }),
+        Promise.all([
+          tx.priceListItem.findMany({
+            where: { minQuantity: 1, variant: { isActive: true, product: { isActive: true, deletedAt: null } } },
+            select: { price: true, updatedAt: true, priceList: { select: { name: true } }, variant: { select: { sku: true } } },
+            orderBy: { variant: { sku: 'asc' } },
+          }),
+          RecommendationsService.active(tx),
+        ]),
       company.id,
     );
 
@@ -46,6 +55,8 @@ export class PublicCatalogService {
       currency: company.baseCurrency,
       updatedAt: updatedAt?.toISOString() ?? null,
       items: [...bySku].map(([sku, prices]) => ({ sku, prices })),
+      recommendations,
+      combo: { name: RETAIL_COMBO.name, items: RETAIL_COMBO.items.map((i) => ({ ...i })), firstPurchaseDiscountPct: RETAIL_COMBO.firstPurchaseDiscountPct },
     };
   }
 }
