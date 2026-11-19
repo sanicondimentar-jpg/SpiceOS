@@ -181,3 +181,31 @@ export const useConversationAssistant = (id: string) => {
     onSuccess: invalidate,
   });
 };
+
+export interface WhatsappProfile {
+  about: string;
+  description: string;
+  address: string;
+  email: string;
+  website: string;
+  website2: string;
+  vertical: string;
+  photoUrl: string | null;
+}
+
+export const useWhatsappProfile = (enabled: boolean) =>
+  useQuery({ queryKey: ['whatsapp-profile'], queryFn: () => api<WhatsappProfile>('/messaging/whatsapp-account/profile'), enabled, retry: false });
+
+/** Publica el perfil en Meta: textos y, si viene, la foto nueva. */
+export const useSaveWhatsappProfile = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fields, photo }: { fields: Omit<WhatsappProfile, 'photoUrl'>; photo: Blob | null }) => {
+      const body = new FormData();
+      for (const [k, v] of Object.entries(fields)) if (v) body.append(k, v);
+      if (photo) body.append('photo', photo, photo.type === 'image/png' ? 'perfil.png' : 'perfil.jpg');
+      return api<WhatsappProfile>('/messaging/whatsapp-account/profile', { method: 'PUT', body });
+    },
+    onSuccess: (data) => qc.setQueryData(['whatsapp-profile'], data),
+  });
+};

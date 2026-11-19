@@ -7,6 +7,16 @@ interface AccountCredentials {
   encryptedToken: Uint8Array;
 }
 
+export interface WhatsappBusinessProfile {
+  about?: string;
+  address?: string;
+  description?: string;
+  email?: string;
+  websites?: string[];
+  vertical?: string;
+  profile_picture_url?: string;
+}
+
 /** Cliente mínimo de WhatsApp Business Cloud API (Graph API). */
 @Injectable()
 export class WhatsappClient {
@@ -61,6 +71,38 @@ export class WhatsappClient {
   /** Alta del número en la Cloud API (una sola vez); el PIN queda como verificación en dos pasos. */
   async register(phoneNumberId: string, token: string, pin: string): Promise<void> {
     await this.graph(`${phoneNumberId}/register`, token, 'POST', { messaging_product: 'whatsapp', pin });
+  }
+
+  /** Perfil público del número (info, descripción, dirección, email, webs, rubro y foto). */
+  async getProfile(phoneNumberId: string, token: string): Promise<WhatsappBusinessProfile> {
+    const json = await this.graph<{ data?: WhatsappBusinessProfile[] }>(
+      `${phoneNumberId}/whatsapp_business_profile?fields=about,address,description,email,profile_picture_url,websites,vertical`,
+      token,
+    );
+    return json.data?.[0] ?? {};
+  }
+
+  async updateProfile(phoneNumberId: string, token: string, profile: Omit<WhatsappBusinessProfile, 'profile_picture_url'> & { profile_picture_handle?: string }) {
+    await this.graph(`${phoneNumberId}/whatsapp_business_profile`, token, 'POST', { messaging_product: 'whatsapp', ...profile });
+  }
+
+  /**
+   * Sube una imagen con la API de subida reanudable de Meta y devuelve el "handle" que pide el perfil.
+   * La subida va a nombre de la app dueña del token (se averigua con debug_token).
+   */
+  async uploadProfilePicture(token: string, data: Buffer, mimeType: string): Promise<string> {
+    const debug = await this.graph<{ data?: { app_id?: string } }>(`debug_token?input_token=${encodeURIComponent(token)}`, token);
+    const appId = debug.data?.app_id;
+    if (!appId) throw new Error('No se pudo saber a qué app de Meta pertenece el token');
+    const session = await this.graph<{ id: string }>(`${appId}/uploads?file_length=${data.length}&file_type=${encodeURIComponent(mimeType)}`, token, 'POST');
+    const res = await fetch(`${this.base()}/${session.id}`, {
+      method: 'POST',
+      headers: { Authorization: `OAuth ${token}`, file_offset: '0', 'Content-Type': mimeType },
+      body: new Uint8Array(data),
+    });
+    const json = (await res.json().catch(() => ({}))) as { h?: string; error?: { message: string } };
+    if (!res.ok || !json.h) throw new Error(json.error?.message ?? `Error ${res.status} al subir la foto`);
+    return json.h;
   }
 
   private async graph<T>(path: string, token: string, method = 'GET', body?: unknown): Promise<T> {
