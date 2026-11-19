@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -65,6 +65,10 @@ function SupplierCard({ supplier: s, canWrite }: { supplier: Supplier; canWrite:
   const assign = useSupplierProducts(s.id);
   const [contact, setContact] = useState({ phone: s.phone ?? '', email: s.email ?? '' });
   const [skus, setSkus] = useState('');
+  const savedPhones = s.receiptPhones.join('\n');
+  const [phones, setPhones] = useState(savedPhones);
+  useEffect(() => setPhones(savedPhones), [savedPhones]);
+  const phoneList = phones.split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
   const list = skus.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
   const dirty = contact.phone !== (s.phone ?? '') || contact.email !== (s.email ?? '');
 
@@ -89,6 +93,28 @@ function SupplierCard({ supplier: s, canWrite }: { supplier: Supplier; canWrite:
               {update.error && <p className="mr-auto text-sm text-destructive">{update.error.message}</p>}
               <Button size="sm" variant="outline" disabled={!dirty || update.isPending} onClick={() => update.mutate({ phone: optText(contact.phone), email: optText(contact.email) })}>
                 Guardar contacto
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Field
+              label="Teléfonos que pueden mandar remitos por WhatsApp"
+              htmlFor={`r-${s.id}`}
+              hint="Uno por renglón, con característica (ej. 11 7058-0234). Si desde uno de estos números mandan la foto o el PDF de un remito al WhatsApp de la empresa, se lee solo y queda en Inventario → Ingresar mercadería para que lo confirmes. De otros números no se lee nada."
+            >
+              <textarea
+                id={`r-${s.id}`}
+                rows={2}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={phones}
+                onChange={(e) => setPhones(e.target.value)}
+                placeholder="11 7058-0234"
+              />
+            </Field>
+            <div className="flex items-center justify-end gap-2">
+              {s.receiptPhones.length > 0 && <span className="mr-auto text-sm text-muted-foreground">{s.receiptPhones.length} autorizados</span>}
+              <Button size="sm" variant="outline" disabled={phones === savedPhones || update.isPending} onClick={() => update.mutate({ receiptPhones: phoneList })}>
+                Guardar teléfonos
               </Button>
             </div>
           </div>

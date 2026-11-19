@@ -40,4 +40,28 @@ export class LlmService {
     const text = res.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ?? '{}';
     return JSON.parse(text) as T;
   }
+
+  /** Extracción estructurada a partir de una foto o un PDF (remitos, facturas). */
+  async extractJsonFromFile<T>(
+    system: string,
+    file: { data: Buffer; mediaType: string },
+    instruction: string,
+    schema: Record<string, unknown>,
+  ): Promise<T> {
+    const data = file.data.toString('base64');
+    const source: Anthropic.ContentBlockParam =
+      file.mediaType === 'application/pdf'
+        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
+        : { type: 'image', source: { type: 'base64', media_type: file.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data } };
+    const res = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 8192,
+      system,
+      output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+      messages: [{ role: 'user', content: [source, { type: 'text', text: instruction }] }],
+    });
+    if (res.stop_reason === 'refusal') throw new Error('El modelo rechazó la solicitud');
+    const text = res.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ?? '{}';
+    return JSON.parse(text) as T;
+  }
 }

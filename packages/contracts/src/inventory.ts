@@ -60,3 +60,76 @@ export const movementsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 export type MovementsQuery = z.infer<typeof movementsQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Remitos de compra leídos con IA (foto o PDF) e ingresos "por confirmar".
+// ---------------------------------------------------------------------------
+
+/** Renglón del remito ya cruzado con el catálogo: sale listo para el formulario de ingreso. */
+export interface ReceiptReadingLine {
+  variantId: string;
+  sku: string;
+  description: string; // producto y presentación del catálogo
+  sourceText: string; // cómo figura en el remito
+  quantity: number;
+  unitCost: number | null; // precio del remito con el descuento aplicado
+  currentCost: number | null;
+}
+
+/** Lectura de un remito: lo que la IA reconoce y lo que no pudo cruzar con el catálogo. */
+export interface ReceiptReading {
+  reference: string | null; // número de remito o, si no tiene, "Remito dd/mm/aaaa"
+  documentDate: string | null; // aaaa-mm-dd
+  supplierName: string | null;
+  discountPct: number | null;
+  total: number | null;
+  lines: ReceiptReadingLine[];
+  unmatched: { sourceText: string; quantity: number | null }[];
+}
+
+export type PendingReceiptSource = 'WHATSAPP' | 'API';
+export type PendingReceiptStatus = 'PENDING' | 'CONFIRMED' | 'DISCARDED';
+
+export interface PendingReceiptSummary {
+  id: string;
+  source: PendingReceiptSource;
+  status: PendingReceiptStatus;
+  supplier: { id: string; name: string } | null;
+  sender: string | null; // teléfono de WhatsApp o nombre de la clave
+  reference: string | null;
+  documentDate: string | null;
+  lines: number;
+  unmatched: number;
+  createdAt: string;
+}
+
+export interface PendingReceiptDetail extends PendingReceiptSummary {
+  note: string | null;
+  hasImage: boolean;
+  reading: ReceiptReading;
+}
+
+/** Al confirmar se registra el ingreso con lo que el usuario revisó en el formulario. */
+export const confirmPendingReceiptSchema = receiveStockSchema;
+export type ConfirmPendingReceiptInput = z.infer<typeof confirmPendingReceiptSchema>;
+
+/** Carga externa (Claude u otra integración con clave de acceso): foto o PDF y opcionalmente el proveedor. */
+export const createPendingReceiptSchema = z.object({
+  supplierCode: z.string().trim().min(1).max(30).optional(),
+  note: z.string().trim().max(500).optional(),
+});
+export type CreatePendingReceiptInput = z.infer<typeof createPendingReceiptSchema>;
+
+/** Claves de acceso para integraciones: hoy solo pueden dejar remitos por confirmar. */
+export const createApiKeySchema = z.object({ name: z.string().trim().min(2).max(60) });
+export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
+
+export interface ApiKeySummary {
+  id: string;
+  name: string;
+  prefix: string;
+  scope: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}

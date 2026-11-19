@@ -1003,9 +1003,12 @@ model Supplier {
   rating       Int? // 1-5, calidad/puntualidad
   isActive     Boolean   @default(true) @map("is_active")
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  // Teléfonos autorizados a mandar remitos por WhatsApp (solo dígitos, con código de país).
+  receiptPhones String[] @default([]) @map("receipt_phones")
 
-  products       SupplierProduct[]
-  purchaseOrders PurchaseOrder[]
+  products        SupplierProduct[]
+  purchaseOrders  PurchaseOrder[]
+  pendingReceipts PendingReceipt[]
 
   @@unique([tenantId, code])
   @@map("suppliers")
@@ -1720,4 +1723,48 @@ model Notification {
 
   @@index([userId, readAt])
   @@map("notifications")
+}
+
+/// Remito de compra leído con IA que espera que alguien lo revise y confirme el ingreso.
+model PendingReceipt {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  source       String // WHATSAPP, API
+  status       String    @default("PENDING") // PENDING, CONFIRMED, DISCARDED
+  supplierId   String?   @map("supplier_id") @db.Uuid
+  sender       String? // teléfono de WhatsApp o nombre de la clave de acceso
+  messageId    String?   @map("message_id") @db.Uuid
+  reference    String?
+  documentDate DateTime? @map("document_date") @db.Date
+  note         String?
+  reading      Json // ReceiptReading
+  image        Bytes?
+  imageType    String?   @map("image_type")
+  createdBy    String?   @map("created_by") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  resolvedBy   String?   @map("resolved_by") @db.Uuid
+  resolvedAt   DateTime? @map("resolved_at") @db.Timestamptz
+
+  supplier Supplier? @relation(fields: [supplierId], references: [id])
+
+  @@unique([tenantId, messageId])
+  @@index([tenantId, status, createdAt])
+  @@map("pending_receipts")
+}
+
+/// Clave de acceso para integraciones (Claude). Se guarda solo el hash; hoy solo deja remitos por confirmar.
+model ApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  name       String
+  prefix     String // primeros caracteres, para reconocerla en la lista
+  keyHash    String    @unique @map("key_hash")
+  scope      String    @default("receipts")
+  createdBy  String    @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
+
+  @@index([tenantId])
+  @@map("api_keys")
 }

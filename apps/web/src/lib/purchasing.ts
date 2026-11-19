@@ -76,6 +76,7 @@ export interface Supplier {
   email: string | null;
   leadTimeDays: number;
   isActive: boolean;
+  receiptPhones: string[];
   products: number;
 }
 

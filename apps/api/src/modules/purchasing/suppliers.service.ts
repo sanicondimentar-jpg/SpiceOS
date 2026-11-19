@@ -3,6 +3,18 @@ import type { CreateSupplierInput, SupplierProductsInput, UpdateSupplierInput } 
 import { UnitOfWork } from '../../shared/unit-of-work';
 import { BusinessRuleError, ConflictError, NotFoundError } from '../../shared/domain/errors';
 import { RequestContextStore } from '../../shared/tenancy/request-context';
+import { normalizeReceiptPhone } from '../receipts/supplier-phones';
+
+/** Solo dígitos y sin repetidos; cada uno con característica (al menos 10 dígitos). */
+function receiptPhones(phones: string[] | undefined): string[] | undefined {
+  if (!phones) return undefined;
+  const out = phones.map((p) => {
+    const n = normalizeReceiptPhone(p);
+    if (!n) throw new BusinessRuleError(`Teléfono incompleto: ${p}. Cargalo con la característica, por ejemplo 11 7058-0234`);
+    return n;
+  });
+  return [...new Set(out)];
+}
 
 /** Proveedores y qué presentaciones compra la empresa a cada uno (una presentación puede tener varios). */
 @Injectable()
@@ -21,6 +33,7 @@ export class SuppliersService {
         email: s.email,
         leadTimeDays: s.leadTimeDays,
         isActive: s.isActive,
+        receiptPhones: s.receiptPhones,
         products: s._count.products,
       }));
     });
@@ -30,7 +43,7 @@ export class SuppliersService {
     const ctx = RequestContextStore.get();
     return this.uow.run(async (tx, scope) => {
       if (await tx.supplier.findFirst({ where: { code: input.code }, select: { id: true } })) throw new ConflictError(`Ya existe un proveedor con código ${input.code}`);
-      const s = await tx.supplier.create({ data: { ...input, tenantId: ctx.tenantId, country: 'AR' } });
+      const s = await tx.supplier.create({ data: { ...input, receiptPhones: receiptPhones(input.receiptPhones) ?? [], tenantId: ctx.tenantId, country: 'AR' } });
       scope.auditLog({ action: 'supplier.create', entityType: 'supplier', entityId: s.id, after: input });
       return { id: s.id };
     });
@@ -40,7 +53,7 @@ export class SuppliersService {
     return this.uow.run(async (tx, scope) => {
       const s = await tx.supplier.findFirst({ where: { id } });
       if (!s) throw new NotFoundError('Proveedor', id);
-      await tx.supplier.update({ where: { id }, data: input });
+      await tx.supplier.update({ where: { id }, data: { ...input, receiptPhones: receiptPhones(input.receiptPhones) } });
       scope.auditLog({ action: 'supplier.update', entityType: 'supplier', entityId: id, before: s, after: input });
       return { id };
     });

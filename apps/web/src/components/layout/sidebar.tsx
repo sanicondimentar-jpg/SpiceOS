@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   BarChart3, Boxes, ClipboardList, FileText, Tags, Upload, LayoutDashboard, MessageCircle, Package, Receipt, Settings, ShoppingCart, Truck, Users, Wallet, Workflow, Target,
 } from 'lucide-react';
+import { usePendingReceipts } from '@/lib/receipts';
 import { cn } from '@/lib/utils';
 import { useMe } from '@/lib/hooks';
 import { useOrders } from '@/lib/orders';
@@ -40,6 +41,7 @@ export function Sidebar({ mobileOpen = false, onClose }: { mobileOpen?: boolean;
   const items = NAV.filter((i) => !i.perm || me?.permissions.includes(i.perm));
   // Pedidos de la web esperando revisión: se avisa en el menú.
   const { data: pending } = useOrders({ status: 'PENDING_REVIEW', q: '' }, !!me?.permissions.includes('orders.order.read'));
+  const { data: receipts } = usePendingReceipts(!!me?.permissions.includes('inventory.stock.read'));
   const { data: chats } = useUnreadChats(!!me?.permissions.includes('messaging.conversation.read'));
   return (
     <>
@@ -75,6 +77,9 @@ export function Sidebar({ mobileOpen = false, onClose }: { mobileOpen?: boolean;
                 {label}
                 {href === '/inbox' && !!chats?.unread && (
                   <span className="ml-auto rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground" aria-label={`${chats.unread} mensajes sin leer`}>{chats.unread}</span>
+                )}
+                {href === '/inventory' && !!receipts?.length && (
+                  <span className="ml-auto rounded-full bg-warning px-1.5 text-xs font-semibold text-white" aria-label={`${receipts.length} remitos por confirmar`}>{receipts.length}</span>
                 )}
                 {href === '/orders' && !!pending?.length && (
                   <span className="ml-auto rounded-full bg-warning px-1.5 text-xs font-semibold text-white" aria-label={`${pending.length} por revisar`}>{pending.length}</span>

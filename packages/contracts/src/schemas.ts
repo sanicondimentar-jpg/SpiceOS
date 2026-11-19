@@ -148,6 +148,8 @@ export const createSupplierSchema = z.object({
   phone: z.string().max(30).optional(),
   email: z.string().email().optional(),
   leadTimeDays: z.number().int().min(0).max(365).default(7),
+  // Teléfonos desde los que el proveedor puede mandar remitos por WhatsApp (quedan por confirmar).
+  receiptPhones: z.array(z.string().trim().regex(/^\+?[\d\s()-]{8,25}$/, 'Teléfono inválido')).max(10).optional(),
 });
 export type CreateSupplierInput = z.infer<typeof createSupplierSchema>;
 
