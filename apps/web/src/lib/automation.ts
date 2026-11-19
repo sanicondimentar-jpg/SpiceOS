@@ -41,9 +41,14 @@ export const ALERT_INFO: Record<AlertKind, { title: string; description: string;
     param: { label: (v) => `${v} días antes de vencer`, unit: 'días', min: 1, max: 30 },
   },
   lapsedCustomers: { title: 'Clientes que dejaron de comprar', description: 'Pasó bastante más de lo que suelen tardar entre pedido y pedido.' },
+  expiringDocs: {
+    title: 'Documentos por vencer',
+    description: 'Certificados y documentos con fecha de vencimiento en Documentos.',
+    param: { label: (v) => `Avisar ${v} días antes`, unit: 'días', min: 7, max: 180 },
+  },
 };
 
-export const ALERT_ORDER: AlertKind[] = ['overdueDebt', 'lowStock', 'expiring', 'webOrders', 'staleQuotes', 'lapsedCustomers'];
+export const ALERT_ORDER: AlertKind[] = ['overdueDebt', 'lowStock', 'expiring', 'webOrders', 'staleQuotes', 'lapsedCustomers', 'expiringDocs'];
 
 /** Avisos del día. Se refrescan cada 5 minutos para la campanita. */
 export const useAlerts = () =>

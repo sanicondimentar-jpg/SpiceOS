@@ -364,5 +364,6 @@ export const alertSettingsSchema = z.object({
   webOrders: alertSettingSchema,
   staleQuotes: alertSettingSchema,
   lapsedCustomers: alertSettingSchema,
+  expiringDocs: alertSettingSchema,
 });
 export type AlertSettingsInput = z.infer<typeof alertSettingsSchema>;

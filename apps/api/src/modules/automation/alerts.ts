@@ -1,6 +1,6 @@
 /** Avisos automáticos: qué revisa el sistema todos los días y con qué umbral. */
 
-export const ALERT_KINDS = ['overdueDebt', 'lowStock', 'expiring', 'webOrders', 'staleQuotes', 'lapsedCustomers'] as const;
+export const ALERT_KINDS = ['overdueDebt', 'lowStock', 'expiring', 'webOrders', 'staleQuotes', 'lapsedCustomers', 'expiringDocs'] as const;
 export type AlertKind = (typeof ALERT_KINDS)[number];
 
 export interface AlertSetting {
@@ -15,6 +15,7 @@ export const ALERT_PARAM: Partial<Record<AlertKind, { unit: 'días' | 'horas'; m
   expiring: { unit: 'días', min: 7, max: 365, default: 60 },
   webOrders: { unit: 'horas', min: 1, max: 72, default: 2 },
   staleQuotes: { unit: 'días', min: 1, max: 30, default: 2 },
+  expiringDocs: { unit: 'días', min: 7, max: 180, default: 30 },
 };
 
 export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
@@ -24,6 +25,7 @@ export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
   webOrders: { enabled: true, value: 2 },
   staleQuotes: { enabled: true, value: 2 },
   lapsedCustomers: { enabled: true },
+  expiringDocs: { enabled: true, value: 30 },
 };
 
 /** Mezcla lo guardado con los valores por defecto y acota los parámetros (lo guardado puede ser viejo o inválido). */

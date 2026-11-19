@@ -86,4 +86,13 @@ export class IngestionService {
     });
     return { chunks: rows.length, skipped: false };
   }
+
+  /** Saca una fuente del índice (documento dado de baja): el copiloto deja de citarla. */
+  async remove(type: KnowledgeInput['type'], refId: string): Promise<void> {
+    const { tenantId } = RequestContextStore.get();
+    const source = await this.uow.read((tx) => tx.knowledgeSource.findUnique({ where: { tenantId_type_refId: { tenantId, type, refId } } }));
+    if (!source) return;
+    await this.vectors.deleteBySource(tenantId, source.id);
+    await this.uow.run((tx) => tx.knowledgeSource.delete({ where: { id: source.id } }));
+  }
 }
