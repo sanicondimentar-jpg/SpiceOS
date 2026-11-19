@@ -10,6 +10,7 @@ import {
   priceListSchema,
   productCertificationSchema,
   productListQuerySchema,
+  recommendationListSchema,
   repriceSchema,
   updateCostSchema,
   updateProductSchema,
@@ -22,6 +23,7 @@ import {
   type PriceListInput,
   type ProductCertificationInput,
   type ProductListQuery,
+  type RecommendationListInput,
   type RepriceInput,
   type UpdateCostInput,
   type UpdateProductInput,
@@ -34,6 +36,8 @@ import { CertificationsService } from './application/certifications.service';
 import { PriceListPdfService } from './application/price-list-pdf.service';
 import { PriceListsService } from './application/price-lists.service';
 import { ProductsService } from './application/products.service';
+import { RecommendationsService } from './application/recommendations.service';
+import type { Segment } from './domain/recommendations';
 
 @ApiTags('Catálogo')
 @ApiBearerAuth()
@@ -44,7 +48,27 @@ export class CatalogController {
     private readonly priceLists: PriceListsService,
     private readonly certifications: CertificationsService,
     private readonly priceListPdf: PriceListPdfService,
+    private readonly recommendations: RecommendationsService,
   ) {}
+
+  // ---------- Recomendados por tipo de cliente (web y asistente de WhatsApp) ----------
+  @Get('recommendations')
+  @RequirePermissions(PERMISSIONS.catalog.read)
+  getRecommendations() {
+    return this.recommendations.get();
+  }
+
+  @Put('recommendations')
+  @RequirePermissions(PERMISSIONS.admin.settings)
+  saveRecommendations(@Body(new ZodPipe(recommendationListSchema)) body: RecommendationListInput) {
+    return this.recommendations.save(body);
+  }
+
+  @Delete('recommendations/:segment')
+  @RequirePermissions(PERMISSIONS.admin.settings)
+  resetRecommendations(@Param('segment', new ZodPipe(recommendationListSchema.shape.segment)) segment: Segment) {
+    return this.recommendations.reset(segment);
+  }
 
   /** Lista de precios mayorista en PDF con los precios vigentes (sin costos). */
   @Get('price-list.pdf')

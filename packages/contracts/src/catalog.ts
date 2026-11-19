@@ -109,3 +109,11 @@ export const productCertificationSchema = z.object({
   documentId: z.string().uuid().optional(),
 });
 export type ProductCertificationInput = z.infer<typeof productCertificationSchema>;
+
+/** Productos recomendados por tipo de cliente (web y asistente de WhatsApp), en orden. */
+export const RECOMMENDATION_SEGMENTS = ['MINORISTA', 'ROTISERIA', 'CATERING', 'PIZZERIA', 'PASTELERIA'] as const;
+export const recommendationListSchema = z.object({
+  segment: z.enum(RECOMMENDATION_SEGMENTS),
+  skus: z.array(z.string().trim().min(1).max(40)).max(40),
+});
+export type RecommendationListInput = z.infer<typeof recommendationListSchema>;

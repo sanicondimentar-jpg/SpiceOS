@@ -1953,3 +1953,16 @@ model ApiKey {
   @@index([tenantId])
   @@map("api_keys")
 }
+
+/// Productos recomendados por tipo de cliente (MINORISTA, ROTISERIA, CATERING, PIZZERIA, PASTELERIA), en orden.
+/// Los usan la web y el asistente de WhatsApp. Sin fila: la lista por defecto del código.
+model RecommendationList {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  segment   String
+  skus      String[] @default([])
+  updatedBy String?  @map("updated_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@id([tenantId, segment])
+  @@map("recommendation_lists")
+}

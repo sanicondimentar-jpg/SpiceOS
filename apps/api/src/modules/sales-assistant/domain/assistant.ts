@@ -1,3 +1,4 @@
+import { RETAIL_COMBO, recommendationsText, type Segment } from '../../catalog/domain/recommendations';
 import { isAuthorizedPhone } from '../../receipts/supplier-phones';
 
 /** OFF: no responde. TEST: solo a los teléfonos de prueba. ON: a todos los clientes (menos proveedores). */
@@ -100,20 +101,22 @@ export function topSellersText(fromSales: string[]): string {
   return `Productos que más rotan (ofrecelos primero): ${names.join(', ')}.`;
 }
 
+// ───────────────────────────── Recomendados por tipo de cliente ─────────────────────────────
+
+/** Los recomendados (los mismos que la web) con nombre; se saltean los que no hay que ofrecer. */
+export function recommendedText(lists: Record<Segment, string[]>, catalog: CatalogItem[]): string {
+  const bySku = new Map(catalog.map((c) => [c.sku.toUpperCase(), c]));
+  return recommendationsText(lists, (sku) => {
+    const c = bySku.get(sku.toUpperCase());
+    if (!c || (!c.inStock && !c.loose)) return null;
+    return `[${c.sku}] ${c.product} ${c.presentation}`;
+  });
+}
+
 // ───────────────────────────── Combo minorista ─────────────────────────────
 
-/** Combo básico para minoristas (definido con Nacho): sobres sueltos de 25 g; el precio sale del catálogo. */
-export const RETAIL_COMBO = {
-  name: 'Combo básico',
-  items: [
-    { sku: '179-U', quantity: 10 }, // Pimienta negra molida, sobre 25 g
-    { sku: '41-U', quantity: 10 }, // Pimentón seleccionado, sobre 25 g
-    { sku: '141-U', quantity: 10 }, // Orégano en hojas, sobre 25 g
-    { sku: '60-U', quantity: 10 }, // Ají molido, sobre 25 g
-  ],
-  /** Descuento sobre el combo solo en la primera compra del cliente. */
-  firstPurchaseDiscountPct: 10,
-};
+/** El combo se define junto con los recomendados (la web lo muestra igual). */
+export { RETAIL_COMBO };
 
 export interface ComboInfo {
   available: boolean;
