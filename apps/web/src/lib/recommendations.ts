@@ -15,20 +15,23 @@ export interface RecommendedItem {
 
 export interface RecommendationsView {
   segments: { segment: Segment; label: string; isDefault: boolean; updatedAt: string | null; items: RecommendedItem[] }[];
-  combo: { name: string; firstPurchaseDiscountPct: number; items: (RecommendedItem & { quantity: number })[] };
   combos: ComboView[];
   options: { sku: string; product: string; presentation: string }[];
 }
 
-/** Un combo con el precio de cada sobre dentro del combo (precio y unitPrice en null si falta algún sobre). */
+/** Un combo: producto con SKU propio que al venderse descuenta stock de cada sobre. */
 export interface ComboView {
+  variantId: string;
+  sku: string;
   code: string;
   name: string;
-  fixedPrice: number | null;
-  firstPurchaseDiscountPct: number;
+  presentation: string;
+  items: { variantId: string; sku: string; product: string; presentation: string; quantity: number; active: boolean }[];
+  /** Precio Minorista (null si no tiene). */
   price: number | null;
-  listTotal: number | null;
-  items: (RecommendedItem & { variantId: string | null; quantity: number; unitPrice: number | null; listPrice: number | null })[];
+  looseTotal: number | null;
+  firstPurchaseDiscountPct: number;
+  available: boolean;
 }
 
 const KEY = ['catalog', 'recommendations'];

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError } from '../../../shared/domain/errors';
 import { PrismaService, SystemPrismaService } from '../../../shared/prisma/prisma.service';
-import { BASIC_COMBO, COMBOS } from '../domain/combos';
+import { loadCombos } from './combos';
 import type { Segment } from '../domain/recommendations';
 import { RecommendationsService } from './recommendations.service';
 
@@ -12,13 +12,13 @@ export interface PublicCatalog {
   items: { sku: string; prices: Record<string, number> }[];
   /** Códigos recomendados por tipo de cliente, en orden (solo activos). Minorista: sueltos "-U". */
   recommendations: Record<Segment, string[]>;
-  /** Combo básico para minoristas (lo leen las versiones de la web anteriores a `combos`). */
+  /** Combo Chef (ex básico): lo leen las versiones de la web anteriores a `combos`. */
   combo: { name: string; items: { sku: string; quantity: number }[]; firstPurchaseDiscountPct: number };
   /**
-   * Combos para minoristas, en orden. `price` null = suma de los sobres a precio Minorista; con precio fijo,
-   * la web muestra ese precio y manda el combo por su código en el pedido.
+   * Combos (productos con SKU propio "COMBO-…"), en orden, con su precio Minorista. La web muestra ese
+   * precio y manda el combo por su código corto ("ESENCIAL") en el pedido.
    */
-  combos: { code: string; name: string; items: { sku: string; quantity: number }[]; price: number | null; firstPurchaseDiscountPct: number }[];
+  combos: { code: string; sku: string; name: string; items: { sku: string; quantity: number }[]; price: number | null; firstPurchaseDiscountPct: number }[];
 }
 
 /**
@@ -36,7 +36,7 @@ export class PublicCatalogService {
     const company = await this.system.company.findUnique({ where: { keycloakOrgId: orgAlias }, select: { id: true, status: true, baseCurrency: true } });
     if (!company || company.status !== 'ACTIVE') throw new NotFoundError('Empresa', orgAlias);
 
-    const [rows, recommendations] = await this.prisma.tx(
+    const [rows, recommendations, allCombos] = await this.prisma.tx(
       (tx) =>
         Promise.all([
           tx.priceListItem.findMany({
@@ -45,6 +45,7 @@ export class PublicCatalogService {
             orderBy: { variant: { sku: 'asc' } },
           }),
           RecommendationsService.active(tx),
+          loadCombos(tx),
         ]),
       company.id,
     );
@@ -57,13 +58,24 @@ export class PublicCatalogService {
       bySku.set(r.variant.sku, prices);
       if (!updatedAt || r.updatedAt > updatedAt) updatedAt = r.updatedAt;
     }
+    const combos = allCombos.filter((c) => c.available);
+    const chef = combos.find((c) => c.code === 'CHEF');
     return {
       currency: company.baseCurrency,
       updatedAt: updatedAt?.toISOString() ?? null,
       items: [...bySku].map(([sku, prices]) => ({ sku, prices })),
       recommendations,
-      combo: { name: BASIC_COMBO.name, items: BASIC_COMBO.items.map((i) => ({ ...i })), firstPurchaseDiscountPct: BASIC_COMBO.firstPurchaseDiscountPct },
-      combos: COMBOS.map((c) => ({ code: c.code, name: c.name, items: c.items.map((i) => ({ ...i })), price: c.price, firstPurchaseDiscountPct: c.firstPurchaseDiscountPct })),
+      combo: chef
+        ? { name: chef.name, items: chef.items.map((i) => ({ sku: i.sku, quantity: i.quantity })), firstPurchaseDiscountPct: chef.firstPurchaseDiscountPct }
+        : { name: 'Combo Chef', items: [], firstPurchaseDiscountPct: 0 },
+      combos: combos.map((c) => ({
+        code: c.code,
+        sku: c.sku,
+        name: c.name,
+        items: c.items.map((i) => ({ sku: i.sku, quantity: i.quantity })),
+        price: c.price,
+        firstPurchaseDiscountPct: c.firstPurchaseDiscountPct,
+      })),
     };
   }
 }

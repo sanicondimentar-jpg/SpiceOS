@@ -227,17 +227,26 @@ export class OrdersService {
       this.assertTransition(order.status, 'CONFIRMED');
       await this.crm.assertCanOrder(tx, order.customerId);
       const short: ShortageLine[] = [];
-      // Primero cajas y granel: los sueltos que falten se cubren abriendo las cajas que sobren.
-      const lines = [...order.lines].sort((a, b) => Number(a.variant.sku.endsWith('-U')) - Number(b.variant.sku.endsWith('-U')));
+      const kits = await this.inventory.kitComponents(tx, order.lines.map((l) => l.variantId));
+      // Primero cajas y granel, después sueltos y al final combos: los sueltos que falten se cubren
+      // abriendo las cajas que sobren.
+      const rank = (l: (typeof order.lines)[number]) => (kits.has(l.variantId) ? 2 : l.variant.sku.endsWith('-U') ? 1 : 0);
+      const lines = [...order.lines].sort((a, b) => rank(a) - rank(b));
       for (const line of lines) {
-        const { allocations, missing } = await this.inventory.reserveUpTo(tx, order.warehouseId, line.variantId, Number(line.quantity));
-        await tx.orderAllocation.createMany({
-          data: allocations.map((a) => ({ tenantId: ctx.tenantId, orderLineId: line.id, stockItemId: a.stockItemId, lotId: a.lotId, quantity: a.quantity })),
-        });
-        if (missing > 0) {
-          await tx.salesOrderLine.update({ where: { id: line.id }, data: { backorderQty: missing } });
-          short.push({ orderLineId: line.id, variantId: line.variantId, missing });
+        // Un combo reserva cada componente; la reserva queda en la línea del combo.
+        const parts = kits.get(line.variantId)?.map((c) => ({ variantId: c.variantId, perUnit: c.quantity })) ?? [{ variantId: line.variantId, perUnit: 1 }];
+        let backorder = 0;
+        for (const part of parts) {
+          const { allocations, missing } = await this.inventory.reserveUpTo(tx, order.warehouseId, part.variantId, Number(line.quantity) * part.perUnit);
+          await tx.orderAllocation.createMany({
+            data: allocations.map((a) => ({ tenantId: ctx.tenantId, orderLineId: line.id, stockItemId: a.stockItemId, lotId: a.lotId, quantity: a.quantity })),
+          });
+          if (missing > 0) {
+            short.push({ orderLineId: line.id, variantId: part.variantId, missing });
+            backorder = Math.max(backorder, Math.ceil(missing / part.perUnit));
+          }
         }
+        if (backorder > 0) await tx.salesOrderLine.update({ where: { id: line.id }, data: { backorderQty: backorder } });
       }
       const shortages: ShortageResult[] = short.length
         ? await this.purchasing.addShortages(tx, scope, { branchId: order.branchId, warehouseId: order.warehouseId, orderNumber: order.number }, short)
@@ -245,7 +254,10 @@ export class OrdersService {
       await this.setStatus(tx, order, 'CONFIRMED', { confirmedAt: new Date() }, order.status === 'PENDING_REVIEW' ? 'Pedido web aprobado' : undefined);
       this.emit(scope, 'order.confirmed', order, { confirmedAt: new Date().toISOString(), backorder: short.length > 0 });
       scope.auditLog({ action: 'order.confirm', entityType: 'order', entityId: id, after: { shortages } });
-      await this.stock.checkBelowMinimum(tx, scope, order.lines.map((l) => l.variantId));
+      await this.stock.checkBelowMinimum(tx, scope, [
+        ...order.lines.filter((l) => !kits.has(l.variantId)).map((l) => l.variantId),
+        ...[...kits.values()].flatMap((c) => c.map((x) => x.variantId)),
+      ]);
       return { id, status: 'CONFIRMED', shortages };
     });
   }
@@ -255,8 +267,15 @@ export class OrdersService {
     return this.uow.run(async (tx, scope) => {
       const order = await this.findOrder(tx, id);
       this.assertTransition(order.status, input.to);
+      // En un combo, cada reserva es de un componente: sale con su presentación y su costo.
       const allocations = order.lines.flatMap((l) =>
-        l.allocations.map((a) => ({ stockItemId: a.stockItemId, lotId: a.lotId, quantity: Number(a.quantity), variantId: l.variantId, unitCost: Number(l.unitCost) })),
+        l.allocations.map((a) => ({
+          stockItemId: a.stockItemId,
+          lotId: a.lotId,
+          quantity: Number(a.quantity),
+          variantId: a.stockItem.variantId,
+          unitCost: a.stockItem.variantId === l.variantId ? Number(l.unitCost) : Number(a.stockItem.variant.currentCost),
+        })),
       );
       if (input.to === 'CANCELLED') {
         if (!RequestContextStore.get().permissions.has(PERMISSIONS.orders.confirm)) throw new BusinessRuleError('No tenés permiso para cancelar pedidos');
@@ -370,8 +389,8 @@ export class OrdersService {
           lines: {
             orderBy: { variant: { sku: 'asc' } },
             include: {
-              variant: { select: { sku: true, name: true, product: { select: { name: true } } } },
-              allocations: { include: { lot: { select: { code: true, expiresAt: true } } } },
+              allocations: { include: { lot: { select: { code: true, expiresAt: true } }, stockItem: { select: { variant: { select: { sku: true } } } } } },
+              variant: { select: { sku: true, name: true, product: { select: { name: true } }, kitComponents: { select: { quantity: true, component: { select: { sku: true, name: true, product: { select: { name: true } } } } } } } },
               purchaseOrderLine: { select: { purchaseOrder: { select: { id: true, number: true, status: true } } } },
             },
           },
@@ -431,7 +450,13 @@ export class OrdersService {
           ...(available && { available: available.get(l.variantId) ?? 0 }),
           backorderQty: Number(l.backorderQty),
           purchaseOrder: l.purchaseOrderLine?.purchaseOrder ?? null,
-          lots: l.allocations.map((a) => ({ lot: a.lot?.code ?? null, expiresAt: a.lot?.expiresAt ?? null, quantity: Number(a.quantity) })),
+          lots: l.allocations.map((a) => ({ sku: a.stockItem.variant.sku, lot: a.lot?.code ?? null, expiresAt: a.lot?.expiresAt ?? null, quantity: Number(a.quantity) })),
+          // Combo: qué sobres lleva (para armarlo al preparar el pedido).
+          components: l.variant.kitComponents.map((c) => ({
+            sku: c.component.sku,
+            description: `${c.component.product.name} ${c.component.name}`,
+            quantity: Number(c.quantity) * Number(l.quantity),
+          })),
         })),
         history: o.statusHistory.map((h) => ({ from: h.from, to: h.to, at: h.changedAt, by: h.changedBy, reason: h.reason })),
       };
@@ -441,14 +466,23 @@ export class OrdersService {
   /** Reserva lo que faltó al confirmar; si todavía no entró la mercadería, no se puede preparar. */
   private async reserveBackorders(tx: Tx, order: Awaited<ReturnType<OrdersService['findOrder']>>) {
     const ctx = RequestContextStore.get();
-    for (const line of order.lines.filter((l) => Number(l.backorderQty) > 0)) {
+    const pending = order.lines.filter((l) => Number(l.backorderQty) > 0);
+    const kits = await this.inventory.kitComponents(tx, pending.map((l) => l.variantId));
+    for (const line of pending) {
       const label = `${line.variant.product.name} ${line.variant.name} (${line.variant.sku})`;
-      const allocations = await this.inventory.reserve(tx, order.warehouseId, line.variantId, Number(line.backorderQty), label).catch((e: Error) => {
-        throw new BusinessRuleError(`Todavía falta mercadería para preparar el pedido. ${e.message}`);
-      });
-      await tx.orderAllocation.createMany({
-        data: allocations.map((a) => ({ tenantId: ctx.tenantId, orderLineId: line.id, stockItemId: a.stockItemId, lotId: a.lotId, quantity: a.quantity })),
-      });
+      // Combo: a cada componente le falta lo que pide el combo menos lo que ya se reservó de él.
+      const reserved = (variantId: string) => line.allocations.filter((a) => a.stockItem.variantId === variantId).reduce((s, a) => s + Number(a.quantity), 0);
+      const parts = kits.get(line.variantId)?.map((c) => ({ variantId: c.variantId, quantity: Number(line.quantity) * c.quantity - reserved(c.variantId), label: `${c.sku} del ${label}` })) ?? [
+        { variantId: line.variantId, quantity: Number(line.backorderQty), label },
+      ];
+      for (const part of parts.filter((p) => p.quantity > 0)) {
+        const allocations = await this.inventory.reserve(tx, order.warehouseId, part.variantId, part.quantity, part.label).catch((e: Error) => {
+          throw new BusinessRuleError(`Todavía falta mercadería para preparar el pedido. ${e.message}`);
+        });
+        await tx.orderAllocation.createMany({
+          data: allocations.map((a) => ({ tenantId: ctx.tenantId, orderLineId: line.id, stockItemId: a.stockItemId, lotId: a.lotId, quantity: a.quantity })),
+        });
+      }
       await tx.salesOrderLine.update({ where: { id: line.id }, data: { backorderQty: 0 } });
     }
   }
@@ -469,7 +503,7 @@ export class OrdersService {
     await tx.$queryRaw`SELECT id FROM sales_orders WHERE id = ${id}::uuid FOR UPDATE`;
     const order = await tx.salesOrder.findFirst({
       where: { id },
-      include: { lines: { include: { allocations: true, variant: { select: { sku: true, name: true, product: { select: { name: true } } } } } } },
+      include: { lines: { include: { allocations: { include: { stockItem: { select: { variantId: true, variant: { select: { currentCost: true } } } } } }, variant: { select: { sku: true, name: true, product: { select: { name: true } } } } } } },
     });
     if (!order) throw new NotFoundError('Pedido', id);
     this.assertBranch(order.branchId);

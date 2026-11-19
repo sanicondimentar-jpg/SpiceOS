@@ -1,4 +1,4 @@
-import { catalogText, combosInfo, comboText, decide, topSellersText, isWebOrderMessage, priceDraft, toTurns, type CatalogItem, type DecisionInput } from './assistant';
+import { catalogText, comboText, decide, topSellersText, isWebOrderMessage, priceDraft, toTurns, type CatalogItem, type DecisionInput } from './assistant';
 
 const now = new Date('2026-11-19T15:00:00Z');
 const base: DecisionInput = {
@@ -62,15 +62,18 @@ const catalog: CatalogItem[] = [
 
 const loose = (sku: string, product: string, price: number): CatalogItem => ({ sku, product, presentation: 'Sobre 25 g', price, unitsPerBox: null, inStock: false, loose: true });
 const comboItems = [loose('179-U', 'Pimienta Negra Molida', 1200), loose('41-U', 'Pimentón Seleccionado', 800), loose('141-U', 'Orégano en Hojas', 1200), loose('60-U', 'Ají Molido', 900)];
-const essentialItems = [
-  loose('159-U', 'Pimienta Blanca Molida', 1500),
-  loose('373-U', 'Ajo en Polvo', 700),
-  loose('105-U', 'Comino Molido', 1200),
-  loose('330-U', 'Chimichurri Seco', 1000),
-  loose('329-U', 'Mezcla para Provenzal', 1100),
-  loose('50-U', 'Adobo para Pizza', 1000),
-  loose('48-U', 'Condimento para Arroz', 1000),
-];
+const kit = (sku: string, name: string, price: number, looseTotal: number, pct: number): CatalogItem => ({
+  sku,
+  product: name,
+  presentation: '10 sobres de 25 g',
+  price,
+  unitsPerBox: null,
+  inStock: false,
+  loose: true,
+  combo: { code: sku.replace('COMBO-', ''), items: [{ sku: '179-U', description: 'Pimienta Negra Molida Sobre 25 g', quantity: 1 }], looseTotal, firstPurchaseDiscountPct: pct },
+});
+const chef = kit('COMBO-CHEF', 'Combo Chef', 41000, 41000, 10);
+const esencial = kit('COMBO-ESENCIAL', 'Combo Esencial', 10000, 10400, 0);
 const opts = { minOrder: 50000, retail: false, combos: [] as { code: string; quantity: number }[], firstPurchase: false };
 
 describe('catálogo para el asistente', () => {
@@ -85,20 +88,14 @@ describe('catálogo para el asistente', () => {
     expect(text.split('SUELTOS PARA MINORISTAS')[1]).not.toContain('NO OFRECER');
   });
 
-  it('arma el Combo Chef con los precios vigentes y el 10% de primera compra', () => {
-    const chef = combosInfo(comboItems).find((c) => c.code === 'BASICO')!;
-    expect(chef.priced).toMatchObject({ price: 41000, firstPurchasePrice: 36900 });
-    expect(comboText(comboItems)).toContain('$ 36.900');
-    // Al Esencial le faltan sobres: no se ofrece.
-    expect(combosInfo(comboItems).find((c) => c.code === 'ESENCIAL')!.priced).toBeNull();
-    expect(comboText(comboItems)).not.toContain('Combo Esencial');
-    expect(combosInfo(comboItems.slice(1)).every((c) => !c.priced)).toBe(true);
-  });
-
-  it('el Combo Esencial va a precio fijo', () => {
-    const text = comboText([...comboItems, ...essentialItems]);
+  it('muestra los combos aparte, con su precio y el descuento de primera compra', () => {
+    const text = comboText([...comboItems, chef, esencial]);
+    expect(text).toContain('Combo Chef (código de combo "CHEF")');
+    expect(text).toContain('$ 36.900');
     expect(text).toContain('Combo Esencial (código de combo "ESENCIAL")');
     expect(text).toContain('Precio: $ 10.000 (sueltos suman $ 10.400)');
+    expect(catalogText([...catalog, chef])).not.toContain('COMBO-CHEF');
+    expect(comboText(comboItems)).toContain('no hay disponibles');
   });
 });
 
@@ -127,29 +124,17 @@ describe('pedido del asistente', () => {
     expect(priceDraft([{ sku: '181', quantity: 1 }], catalog, { ...opts, retail: true }).belowMinimum).toBe(false);
   });
 
-  it('agrega el combo con descuento solo en la primera compra', () => {
-    const all = [...catalog, ...comboItems];
-    const first = priceDraft([{ sku: '386-U', quantity: 2 }], all, { ...opts, retail: true, combos: [{ code: 'BASICO', quantity: 1 }], firstPurchase: true });
-    expect(first.lines.filter((l) => l.fromCombo)).toHaveLength(4);
-    expect(first.subtotal).toBe(4600 + 41000);
-    expect(first.discountTotal).toBe(4100);
-    expect(first.total).toBe(4600 + 36900);
-    const again = priceDraft([], all, { ...opts, retail: true, combos: [{ code: 'basico', quantity: 2 }], firstPurchase: false });
+  it('el combo va en una línea con su SKU y el descuento solo en la primera compra del que lo tiene', () => {
+    const all = [...catalog, chef, esencial];
+    const first = priceDraft([{ sku: '386-U', quantity: 2 }], all, { ...opts, retail: true, combos: [{ code: 'CHEF', quantity: 1 }, { code: 'esencial', quantity: 2 }], firstPurchase: true });
+    expect(first.lines.filter((l) => l.fromCombo)).toEqual([
+      expect.objectContaining({ sku: 'COMBO-CHEF', quantity: 1, discountPct: 10, lineTotal: 36900 }),
+      expect.objectContaining({ sku: 'COMBO-ESENCIAL', quantity: 2, discountPct: 0, lineTotal: 20000 }),
+    ]);
+    expect(first.total).toBe(4600 + 36900 + 20000);
+    const again = priceDraft([], all, { ...opts, retail: true, combos: [{ code: 'BASICO', quantity: 2 }], firstPurchase: false });
     expect(again.total).toBe(82000);
-    expect(again.discountTotal).toBe(0);
-    expect(priceDraft([], catalog, { ...opts, combos: [{ code: 'BASICO', quantity: 1 }] }).comboUnavailable).toEqual(['BASICO']);
-  });
-
-  it('carga el Combo Esencial sobre por sobre y suma justo el precio fijo', () => {
-    const all = [...catalog, ...comboItems, ...essentialItems];
-    const d = priceDraft([{ sku: '179-U', quantity: 1 }], all, { ...opts, retail: true, combos: [{ code: 'ESENCIAL', quantity: 2 }], firstPurchase: true });
-    const combo = d.lines.filter((l) => l.fromCombo === 'Combo Esencial');
-    expect(combo).toHaveLength(10);
-    expect(combo.every((l) => l.quantity === 2 && l.discountPct === 0)).toBe(true);
-    // El suelto de pimienta va aparte, a precio de lista.
-    expect(d.lines.find((l) => l.sku === '179-U' && !l.fromCombo)).toMatchObject({ quantity: 1, lineTotal: 1200 });
-    expect(d.total).toBe(1200 + 20000);
-    expect(priceDraft([], all, { ...opts, combos: [{ code: 'NO-EXISTE', quantity: 1 }] }).comboUnavailable).toEqual(['NO-EXISTE']);
+    expect(priceDraft([], catalog, { ...opts, combos: [{ code: 'CHEF', quantity: 1 }] }).comboUnavailable).toEqual(['CHEF']);
   });
 });
 
