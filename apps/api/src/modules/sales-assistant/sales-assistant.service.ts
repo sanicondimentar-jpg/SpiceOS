@@ -22,6 +22,7 @@ import {
   catalogText,
   comboText,
   decide,
+  topSellersText,
   type DraftLine,
   money,
   priceDraft,
@@ -231,8 +232,9 @@ export class SalesAssistantService {
   private async reply(conversationId: string) {
     const ctx = RequestContextStore.get();
     const conversation = (await this.loadConversation(conversationId))!;
-    const [catalog, history] = await Promise.all([
+    const [catalog, topSellers, history] = await Promise.all([
       this.uow.read((tx) => this.loadCatalog(tx)),
+      this.uow.read((tx) => this.loadTopSellers(tx)),
       this.uow.read((tx) =>
         tx.message.findMany({
           where: { conversationId },
@@ -250,7 +252,7 @@ export class SalesAssistantService {
       { type: 'text', text: ASSISTANT_SYSTEM },
       {
         type: 'text',
-        text: `Catálogo vigente (código, producto, presentación, precio):\n${catalogText(catalog)}\n\n${comboText(catalog)}`,
+        text: `Catálogo vigente (código, producto, presentación, precio):\n${catalogText(catalog)}\n\n${topSellersText(topSellers)}\n\n${comboText(catalog)}`,
         cache_control: { type: 'ephemeral' },
       },
       {
@@ -555,6 +557,22 @@ export class SalesAssistantService {
    * Catálogo que ofrece el asistente: la lista Mayorista (o la por defecto) y los sueltos de la Minorista,
    * igual que la lista de precios en PDF. Solo productos activos, con el stock disponible del depósito principal.
    */
+  /** Los 8 productos con más venta de los últimos 90 días (pedidos no cancelados), solo activos. */
+  async loadTopSellers(tx: Tx): Promise<string[]> {
+    const rows = await tx.$queryRaw<{ name: string }[]>`
+      SELECT p.name
+      FROM sales_order_lines l
+      JOIN sales_orders o ON o.id = l.order_id
+      JOIN product_variants v ON v.id = l.variant_id
+      JOIN products p ON p.id = v.product_id
+      WHERE o.status <> 'CANCELLED' AND o.created_at > now() - interval '90 days'
+        AND p.is_active AND p.deleted_at IS NULL
+      GROUP BY p.name
+      ORDER BY sum(l.line_total) DESC
+      LIMIT 8`;
+    return rows.map((r) => r.name);
+  }
+
   async loadCatalog(tx: Tx): Promise<CatalogItem[]> {
     const lists = await tx.priceList.findMany({ select: { id: true, name: true, isDefault: true } });
     const wholesale = lists.find((l) => l.name.toLowerCase() === 'mayorista') ?? lists.find((l) => l.isDefault);
