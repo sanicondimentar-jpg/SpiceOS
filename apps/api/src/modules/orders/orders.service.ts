@@ -23,6 +23,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { PurchasingService, type ShortageLine, type ShortageResult } from '../purchasing/purchasing.service';
 import { priceLines } from '../sales/quote-pricing';
 import { addsVat } from '../invoicing/fiscal-settings.service';
+import { CollectionsService } from '../receivables/collections.service';
 import { orderTax, storedTax } from './order-tax';
 
 class OrderEvents extends AggregateRoot {
@@ -69,7 +70,16 @@ export class OrdersService {
     private readonly inventory: InventoryFacade,
     private readonly stock: InventoryService,
     private readonly purchasing: PurchasingService,
+    private readonly collections: CollectionsService,
   ) {}
+
+  /** Aviso cuando el cliente tiene deuda vencida: el pedido se puede tomar, pero no se entrega hasta regularizar. */
+  private async overdueWarning(tx: Tx, customerId: string) {
+    const debt = await this.collections.overdueDebt(tx, customerId);
+    return debt
+      ? `El cliente tiene deuda vencida de $${Math.round(debt.amount).toLocaleString('es-AR')} (hace ${debt.maxDaysOverdue} días): el pedido se toma, pero no se entrega hasta que regularice.`
+      : null;
+  }
 
   /** Precios, margen y disponible por línea, sin guardar nada. Lo usa la pantalla de armado. */
   preview(input: OrderPreviewInput) {
@@ -108,6 +118,7 @@ export class OrdersService {
         ...orderTax(pricing.total, input.withInvoice, await addsVat(tx)),
         ...(canSeeCost && { marginTotal: pricing.marginTotal }),
         warnings: [
+          ...[await this.overdueWarning(tx, input.customerId)].filter((w): w is string => !!w),
           ...missing.map((l) => `${priced.get(l.variantId)!.name} no tiene precio en la lista del cliente; indicá un precio`),
           ...pricing.approvalReasons,
         ],
@@ -264,6 +275,8 @@ export class OrdersService {
       if (input.to === 'DELIVERED') {
         for (const l of order.lines) await tx.salesOrderLine.update({ where: { id: l.id }, data: { deliveredQty: l.quantity } });
         this.emit(scope, 'order.delivered', order, {});
+        // Entregado: pasa a la cuenta del cliente (si ya pagó, se cubre con ese cobro).
+        await this.collections.chargeDeliveredOrder(tx, scope, id);
       }
       await this.setStatus(tx, order, input.to, {}, input.reason);
       // Si ya se facturó antes de entregarlo, al entregarlo queda directamente facturado.
@@ -326,6 +339,7 @@ export class OrdersService {
           lines: { where: { backorderQty: { gt: 0 } }, select: { id: true }, take: 1 },
         },
       });
+      const overdue = await this.collections.overdueByCustomer(tx, rows.map((o) => o.customerId));
       return rows.map((o) => ({
         id: o.id,
         number: o.number,
@@ -338,6 +352,7 @@ export class OrdersService {
         requestedDate: o.requestedDate,
         createdAt: o.createdAt,
         statusSince: o.statusHistory[0]?.changedAt ?? o.createdAt,
+        overdueDebt: overdue.get(o.customerId)?.amount ?? 0,
         waitingStock: o.lines.length > 0,
       }));
     });
@@ -392,6 +407,9 @@ export class OrdersService {
         webTotal: o.webTotal === null ? null : Number(o.webTotal),
         createdCustomer: o.createdCustomer,
         possibleDuplicates: duplicates.map((d) => ({ ...d, total: Number(d.total) })),
+        // Cobranza: deuda vencida del cliente (frena la entrega) y cobro de este pedido.
+        overdueDebt: o.status === 'CANCELLED' ? null : await this.collections.overdueDebt(tx, o.customerId),
+        collection: await this.collections.orderCollection(tx, o.id),
         subtotal: Number(o.subtotal),
         discountTotal: Number(o.discountTotal),
         total: Number(o.total),

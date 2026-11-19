@@ -67,6 +67,12 @@ function Order({ id }: { id: string }) {
         {!editing && <Actions order={o} can={can} onEdit={() => setEditing(true)} onConfirmed={setShortages} initialError={initialError} />}
       </div>
 
+      {o.overdueDebt && o.status !== 'DELIVERED' && o.status !== 'INVOICED' && (
+        <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive print:hidden">
+          El cliente tiene {money(o.overdueDebt.amount)} vencidos (hace {o.overdueDebt.maxDaysOverdue} días): el pedido se puede preparar, pero no se entrega hasta que regularice.{' '}
+          <Link href={`/receivables/${o.customer.id}`} className="font-medium underline">Ver cuenta</Link>
+        </div>
+      )}
       {shortages && <ShortagesResult shortages={shortages} onClose={() => setShortages(null)} />}
       {o.status === 'PENDING_REVIEW' && !editing && <WebReview order={o} />}
 
@@ -77,10 +83,46 @@ function Order({ id }: { id: string }) {
           {o.notes && <Card><CardContent className="p-4 text-sm"><span className="text-muted-foreground">Notas: </span>{o.notes}</CardContent></Card>}
           <Lines order={o} />
           <OrderInvoices order={o} can={can} />
+          {can('receivables.account.read') && o.status !== 'CANCELLED' && <OrderCollection order={o} canWrite={can('receivables.payment.write')} />}
           <History order={o} />
         </>
       )}
     </div>
+  );
+}
+
+/** Cobro del pedido: cuánto se cobró, cuánto falta y cuándo vence. */
+function OrderCollection({ order: o, canWrite }: { order: OrderDetail; canWrite: boolean }) {
+  const { charge, prepaid } = o.collection;
+  const delivered = o.status === 'DELIVERED' || o.status === 'INVOICED';
+  const href = `/receivables/${o.customer.id}?order=${o.id}`;
+  const paidOff = charge?.status === 'PAID';
+  const overdue = !!charge && charge.balance > 0.005 && (charge.daysOverdue ?? -1) > 0;
+  return (
+    <Card className="print:hidden">
+      <CardContent className="flex flex-wrap items-center gap-3 p-4 text-sm">
+        <span className="font-semibold">Cobro</span>
+        {charge ? (
+          <>
+            <Badge tone={paidOff ? 'good' : overdue ? 'bad' : charge.paid > 0.005 ? 'brand' : 'warn'}>
+              {paidOff ? 'Cobrado' : overdue ? 'Vencido' : charge.paid > 0.005 ? 'Cobrado en parte' : 'A cobrar'}
+            </Badge>
+            <span>Cobrado {money(charge.paid)} de {money(charge.total)}</span>
+            {!paidOff && <span>· falta <span className="font-medium">{money(charge.balance)}</span> · vence {date(charge.dueDate)}</span>}
+          </>
+        ) : delivered ? (
+          <span className="text-muted-foreground">Sin deuda registrada.</span>
+        ) : (
+          <span className="text-muted-foreground">
+            {prepaid > 0.005 ? `Ya cobrado ${money(prepaid)}: se aplica al entregarlo.` : 'Al marcarlo entregado queda a cobrar en la cuenta del cliente (si no se cobró antes).'}
+          </span>
+        )}
+        <div className="ml-auto flex gap-2">
+          <Button asChild size="sm" variant="ghost"><Link href={`/receivables/${o.customer.id}`}>Cuenta del cliente</Link></Button>
+          {canWrite && !paidOff && <Button asChild size="sm" variant="outline"><Link href={href}>Registrar cobro</Link></Button>}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -117,7 +159,16 @@ function Actions({ order, can, onEdit, onConfirmed, initialError }: {
           </Button>
         )}
         {next && can('orders.order.write') && (
-          <Button size="sm" disabled={busy} onClick={() => transition.mutate({ to: next.to })}>{next.label}</Button>
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              if (next.to === 'DISPATCHED' && order.overdueDebt && !window.confirm(`El cliente tiene ${money(order.overdueDebt.amount)} vencidos: no se entrega hasta que regularice. ¿Despachar igual?`)) return;
+              transition.mutate({ to: next.to });
+            }}
+          >
+            {next.label}
+          </Button>
         )}
       </div>
       {cancelling && review && (
