@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'node:crypto';
 import { LlmService } from '../../shared/ai/llm.service';
+import { findCombo } from '../catalog/domain/combos';
 import { env } from '../../shared/config/env';
 import { AggregateRoot } from '../../shared/domain/aggregate-root';
 import { DomainEvent } from '../../shared/domain/domain-event';
@@ -65,7 +66,16 @@ const TOOLS: Anthropic.Tool[] = [
       type: 'object',
       properties: {
         tipo_cliente: { type: 'string', enum: ['mayorista', 'minorista'], description: 'Mayorista: tiene pedido mínimo. Minorista: sin mínimo, entrega o retiro a coordinar.' },
-        combos: { type: 'integer', description: 'Cantidad de combos básicos para minoristas (0 si no lleva).' },
+        combos: {
+          type: 'array',
+          description: 'Combos para minoristas que lleva, con el código de combo del catálogo y la cantidad. Vacío si no lleva combos.',
+          items: {
+            type: 'object',
+            properties: { codigo: { type: 'string' }, cantidad: { type: 'integer' } },
+            required: ['codigo', 'cantidad'],
+            additionalProperties: false,
+          },
+        },
         items: {
           type: 'array',
           description: 'Productos sueltos del pedido (aparte del combo), con el código del catálogo (lo que va entre corchetes) y la cantidad de cajas, bolsas o unidades. Puede estar vacío si solo lleva combos.',
@@ -370,9 +380,9 @@ export class SalesAssistantService {
     const draftLines: DraftLine[] = (input.items ?? []).map((i) => ({ sku: String(i.sku), quantity: Math.trunc(Number(i.cantidad)) }));
     const retail = input.tipo_cliente === 'minorista';
     const firstPurchase = await this.isFirstPurchase(state.conversation);
-    const draft = priceDraft(draftLines, state.catalog, { minOrder: state.minOrder, retail, combos: Number(input.combos) || 0, firstPurchase });
+    const draft = priceDraft(draftLines, state.catalog, { minOrder: state.minOrder, retail, combos: comboRequests(input), firstPurchase });
     if (draft.unknown.length) throw new Error(`Estos códigos no están en el catálogo: ${draft.unknown.join(', ')}. Revisalos con el cliente.`);
-    if (draft.comboUnavailable) throw new Error('El combo no está disponible ahora: ofrecé los sueltos por separado.');
+    if (draft.comboUnavailable.length) throw new Error(`Este combo no está disponible ahora: ${draft.comboUnavailable.join(', ')}. Ofrecé los sueltos por separado o el otro combo.`);
     if (!draft.lines.length) throw new Error('El pedido no tiene productos.');
     if (draft.belowMinimum) {
       throw new Error(`El total es ${money(draft.total)} y el pedido mínimo para mayoristas es ${money(state.minOrder)}: faltan ${money(state.minOrder - draft.total)}. No se registró.`);
@@ -415,9 +425,7 @@ export class SalesAssistantService {
         retail ? 'Cliente minorista: sin pedido mínimo; coordinar entrega o retiro.' : 'Cliente mayorista.',
         `Entrega: ${input.direccion.trim()}, ${input.localidad.trim()}.`,
         input.horario?.trim() ? `Recibe: ${input.horario.trim()}.` : null,
-        Number(input.combos) > 0
-          ? `Lleva ${Number(input.combos)} combo(s) básico(s)${firstPurchase ? ' con 10% por primera compra' : ''}.`
-          : null,
+        comboSummary(input) ? `Lleva ${comboSummary(input)}${draft.discountTotal > 0 ? ' (con descuento por primera compra)' : ''}.` : null,
         input.notas?.trim() ? `Notas del cliente: ${input.notas.trim()}` : null,
         draft.noStock.length ? `Sin stock al registrar (confirmar): ${draft.lines.filter((l) => !l.inStock).map((l) => l.description).join(', ')}.` : null,
       ]
@@ -479,8 +487,8 @@ export class SalesAssistantService {
       numero: result.number,
       reemplazo_al_anterior: result.replaced,
       total: money(draft.total),
-      productos: draft.lines.map((l) => `${l.quantity} × ${l.description}${l.fromCombo ? ' (combo)' : ''} = ${money(l.lineTotal)}`),
-      descuento: draft.discountTotal > 0 ? `${money(draft.discountTotal)} (10% del combo por primera compra)` : null,
+      productos: draft.lines.map((l) => `${l.quantity} × ${l.description}${l.fromCombo ? ` (${l.fromCombo})` : ''} = ${money(l.lineTotal)}`),
+      descuento: draft.discountTotal > 0 ? `${money(draft.discountTotal)} (descuento del combo por primera compra)` : null,
       entrega: retail ? 'a coordinar con el equipo (entrega o retiro)' : 'la confirma el equipo',
       estado: 'por confirmar: una persona del equipo lo revisa y confirma por este chat la entrega y la forma de pago',
       // Pedido de Nacho: con deuda vencida se toma el pedido, pero se avisa que no se entrega hasta regularizar.
@@ -642,13 +650,28 @@ export class SalesAssistantService {
 
 interface OrderToolInput {
   tipo_cliente: 'mayorista' | 'minorista';
-  combos: number;
+  combos: { codigo: string; cantidad: number }[];
   horario: string;
   items: { sku: string; cantidad: number }[];
   nombre: string;
   direccion: string;
   localidad: string;
   notas: string;
+}
+
+/** Lo que pidió el modelo; acepta el formato viejo (un número = combos Chef) por si queda en un historial. */
+function comboRequests(input: OrderToolInput): { code: string; quantity: number }[] {
+  const raw = input.combos as unknown;
+  if (typeof raw === 'number') return raw > 0 ? [{ code: 'BASICO', quantity: raw }] : [];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((c) => ({ code: String(c?.codigo ?? ''), quantity: Math.trunc(Number(c?.cantidad)) || 0 })).filter((c) => c.code && c.quantity > 0);
+}
+
+/** "1 × Combo Esencial, 2 × Combo Chef". */
+function comboSummary(input: OrderToolInput): string {
+  return comboRequests(input)
+    .map((c) => `${c.quantity} × ${findCombo(c.code)?.name ?? c.code}`)
+    .join(', ');
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

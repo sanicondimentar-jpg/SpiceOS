@@ -8,10 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { money } from '@/lib/utils';
 import { useRecommendations, useResetRecommendations, useSaveRecommendations, type RecommendationsView, type Segment } from '@/lib/recommendations';
 
 const HINTS: Record<Segment, string> = {
-  MINORISTA: 'Sueltos (códigos que terminan en -U). En la web se muestran debajo del Combo básico.',
+  MINORISTA: 'Sueltos (códigos que terminan en -U). En la web se muestran debajo de los combos.',
   ROTISERIA: 'Cajas y bolsas.',
   CATERING: 'Cajas y bolsas.',
   PIZZERIA: 'Cajas y bolsas.',
@@ -42,23 +43,31 @@ export default function RecommendationsPage() {
 
       <ListEditor key={segment} data={data} segment={segment} />
 
-      {segment === 'MINORISTA' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{data.combo.name}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm">
-            {data.combo.items.map((i) => (
-              <div key={i.sku}>
-                {i.quantity} × {i.product} {i.presentation} <span className="text-muted-foreground">[{i.sku}]</span>
-              </div>
-            ))}
-            <p className="pt-2 text-muted-foreground">
-              {data.combo.firstPurchaseDiscountPct}% de descuento en la primera compra. Por ahora el combo se cambia pidiéndolo (no desde esta pantalla).
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      {segment === 'MINORISTA' &&
+        data.combos.map((c) => (
+          <Card key={c.code}>
+            <CardHeader>
+              <CardTitle className="text-base">
+                {c.name} {c.price != null && <span className="font-normal text-muted-foreground">· {money(c.price)}</span>}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1 text-sm">
+              {c.items.map((i) => (
+                <div key={i.sku}>
+                  {i.quantity} × {i.product} {i.presentation} <span className="text-muted-foreground">[{i.sku}]</span>
+                  {!i.active && <Badge tone="warn" className="ml-2">Dado de baja</Badge>}
+                </div>
+              ))}
+              <p className="pt-2 text-muted-foreground">
+                {c.fixedPrice != null
+                  ? `Precio fijo${c.listTotal != null ? ` (sueltos suman ${money(c.listTotal)})` : ''}.`
+                  : 'Vale lo que suman los sobres a precio Minorista.'}
+                {c.firstPurchaseDiscountPct > 0 && ` ${c.firstPurchaseDiscountPct}% de descuento en la primera compra.`}
+                {c.price == null && ' No se ofrece: falta algún sobre o su precio.'} Por ahora los combos se cambian pidiéndolo (no desde esta pantalla).
+              </p>
+            </CardContent>
+          </Card>
+        ))}
     </div>
   );
 }

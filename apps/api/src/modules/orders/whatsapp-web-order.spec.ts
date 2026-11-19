@@ -34,6 +34,7 @@ describe('pedido de la web que llegó por WhatsApp', () => {
         { sku: '253', quantity: 1 },
         { sku: '133', quantity: 2 },
       ],
+      combos: [],
       total: 66100,
     });
   });
@@ -46,6 +47,15 @@ describe('pedido de la web que llegó por WhatsApp', () => {
     expect(o?.mode).toBe('minorista');
     expect(o?.lines).toEqual([{ sku: '50-U', quantity: 3 }]);
     expect(o?.phone).toBe('+5491100000000');
+  });
+
+  it('lee los combos por su código', () => {
+    const o = parseWebOrderMessage(
+      `*Pedido — Sabor a Casa*\nModo: Minorista\nCliente: Ana\n\n1) [COMBO-ESENCIAL] Combo Esencial — 10 sobres de 25 g\n   2 × $ 10.000 = $ 20.000\n2) [50] Adobo — Sobre 25 g\n   1 × $ 1.000 = $ 1.000\n\n*TOTAL: $ 21.000*`,
+      '+5491100000000',
+    );
+    expect(o?.combos).toEqual([{ code: 'ESENCIAL', quantity: 2 }]);
+    expect(o?.lines).toEqual([{ sku: '50-U', quantity: 1 }]);
   });
 
   it('ignora el pedido que ya trae número (ya está registrado) y los mensajes comunes', () => {

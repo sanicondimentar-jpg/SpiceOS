@@ -194,13 +194,18 @@ export const webOrderSchema = z.object({
   mode: z.enum(['mayorista', 'minorista']).default('mayorista'),
   lines: z
     .array(z.object({ sku: z.string().trim().min(1).max(40), quantity: z.number().int().positive().max(10_000) }))
-    .min(1)
-    .max(200),
+    .max(200)
+    .default([]),
+  /** Combos para minoristas por su código ("ESENCIAL", "BASICO"): se cargan como un sobre por línea a precio de combo. */
+  combos: z
+    .array(z.object({ code: z.string().trim().min(1).max(40), quantity: z.number().int().positive().max(1000) }))
+    .max(20)
+    .default([]),
   /** Total que vio la persona en la web, para comparar al revisar. */
   total: z.number().nonnegative().optional(),
   /** Campo oculto del formulario: si viene con algo, lo completó un robot. */
   website: z.string().max(200).optional(),
-});
+}).refine((o) => o.lines.length + o.combos.length > 0, { message: 'El pedido no tiene productos', path: ['lines'] });
 export type WebOrderInput = z.infer<typeof webOrderSchema>;
 
 /** Seguimiento público de un pedido: el número es la guía y el teléfono confirma que es de quien consulta. */
