@@ -698,9 +698,29 @@ model ProductVariant {
   stockItems      StockItem[]
   supplierProducts SupplierProduct[]
   purchaseLines   PurchaseOrderLine[]
+  // Si es un combo: los sobres que lo componen.
+  kitComponents   KitComponent[]      @relation("KitVariant")
+  // Combos en los que entra esta presentación.
+  inKits          KitComponent[]      @relation("KitComponentVariant")
 
   @@unique([tenantId, sku])
   @@map("product_variants")
+}
+
+// Combo: presentación que se vende en una línea y descuenta stock de cada componente.
+model KitComponent {
+  id                 String  @id @default(uuid()) @db.Uuid
+  tenantId           String  @map("tenant_id") @db.Uuid
+  kitVariantId       String  @map("kit_variant_id") @db.Uuid
+  componentVariantId String  @map("component_variant_id") @db.Uuid
+  quantity           Decimal @db.Decimal(18, 3)
+
+  kit       ProductVariant @relation("KitVariant", fields: [kitVariantId], references: [id], onDelete: Cascade)
+  component ProductVariant @relation("KitComponentVariant", fields: [componentVariantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, kitVariantId, componentVariantId])
+  @@index([kitVariantId])
+  @@map("kit_components")
 }
 
 model Certification {

@@ -14,10 +14,7 @@ import { normalizePhone } from '../crm/domain/customer';
 import { priceLines } from '../sales/quote-pricing';
 import { addsVat } from '../invoicing/fiscal-settings.service';
 import { orderTax } from './order-tax';
-import { findCombo, priceCombo } from '../catalog/domain/combos';
-import { RecommendationsService } from '../catalog/application/recommendations.service';
-
-const money = (n: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n);
+import { comboSku } from '../catalog/domain/combos';
 
 class OrderEvents extends AggregateRoot {
   emit(e: DomainEvent) {
@@ -95,45 +92,21 @@ export class WebOrdersService {
 
       const priceList = await tx.priceList.findFirst({ where: { name: { equals: LIST_BY_MODE[input.mode], mode: 'insensitive' } }, select: { id: true } });
 
-      // Mismo SKU repetido en el carrito: se suma.
+      // Mismo SKU repetido en el carrito: se suma. Los combos vienen por su código corto ("ESENCIAL")
+      // y son un producto más (SKU "COMBO-ESENCIAL"): una línea que al reservarse descuenta cada sobre.
       const qtyBySku = new Map<string, number>();
       for (const l of input.lines) qtyBySku.set(l.sku, (qtyBySku.get(l.sku) ?? 0) + l.quantity);
-
-      // Combos: cada sobre va en su línea con su parte del precio del combo (descuenta el stock de cada uno).
-      const comboRequests = new Map<string, number>();
-      for (const c of input.combos) comboRequests.set(c.code.toUpperCase(), (comboRequests.get(c.code.toUpperCase()) ?? 0) + c.quantity);
-      const comboDefs = [...comboRequests].map(([code, quantity]) => ({ code, quantity, def: findCombo(code) }));
-      const comboSkus = comboDefs.flatMap((c) => c.def?.items.map((i) => i.sku) ?? []);
-      const retailPrices = comboSkus.length ? await RecommendationsService.retailPrices(tx) : new Map<string, number>();
-
+      for (const c of input.combos) qtyBySku.set(comboSku(c.code), (qtyBySku.get(comboSku(c.code)) ?? 0) + c.quantity);
       const variants = await tx.productVariant.findMany({
-        where: { sku: { in: [...new Set([...qtyBySku.keys(), ...comboSkus])] }, isActive: true, product: { isActive: true, deletedAt: null } },
+        where: { sku: { in: [...qtyBySku.keys()] }, isActive: true, product: { isActive: true, deletedAt: null } },
         select: { id: true, sku: true },
       });
-      const variantBySku = new Map(variants.map((v) => [v.sku.toUpperCase(), v]));
-      const unknown = [...qtyBySku.keys()].filter((sku) => !variantBySku.has(sku.toUpperCase()));
+      const unknown = [...qtyBySku.keys()].filter((sku) => !variants.some((v) => v.sku === sku));
+      if (!variants.length) throw new BusinessRuleError('Ningún producto del pedido figura en el catálogo');
 
-      const comboLines: { variantId: string; quantity: number; unitPrice: number; discountPct: number }[] = [];
-      const comboNotes: string[] = [];
-      const badCombos: string[] = [];
-      for (const c of comboDefs) {
-        const priced = c.def && priceCombo(c.def, (sku) => (variantBySku.has(sku.toUpperCase()) ? retailPrices.get(sku.toUpperCase()) : null));
-        if (!priced) {
-          badCombos.push(`${c.def?.name ?? c.code} × ${c.quantity}`);
-          continue;
-        }
-        for (const l of priced.lines) comboLines.push({ variantId: variantBySku.get(l.sku.toUpperCase())!.id, quantity: l.quantity * c.quantity, unitPrice: l.unitPrice, discountPct: 0 });
-        comboNotes.push(`${c.quantity} × ${priced.name} (${money(priced.price)} c/u)`);
-      }
-
-      const looseItems = [...qtyBySku]
-        .filter(([sku]) => variantBySku.has(sku.toUpperCase()))
-        .map(([sku, quantity]) => ({ variantId: variantBySku.get(sku.toUpperCase())!.id, quantity, discountPct: 0 }));
-      if (!looseItems.length && !comboLines.length) throw new BusinessRuleError('Ningún producto del pedido figura en el catálogo');
-
-      const items = [...looseItems, ...comboLines];
+      const items = variants.map((v) => ({ variantId: v.id, quantity: qtyBySku.get(v.sku)!, discountPct: 0 }));
       const priced = await this.catalog.price(tx, items, priceList?.id ?? null);
-      const noPrice = looseItems.filter((i) => priced.get(i.variantId)!.listPrice == null);
+      const noPrice = items.filter((i) => priced.get(i.variantId)!.listPrice == null);
       // Los que no tienen precio entran a $0 para que quien revisa los complete.
       const pricing = priceLines(
         items.map((i) => (noPrice.includes(i) ? { ...i, unitPrice: 0 } : i)),
@@ -149,8 +122,6 @@ export class WebOrdersService {
         origin,
         input.notes,
         `Pedido web (${input.mode}) de ${input.name}, tel. ${input.phone}.`,
-        comboNotes.length ? `Lleva ${comboNotes.join(', ')}: cada sobre va en su línea con su parte del precio del combo.` : null,
-        badCombos.length ? `Combos que no se pudieron cargar (falta algún sobre o su precio): ${badCombos.join(', ')}.` : null,
         unknown.length ? `Códigos que no están en el catálogo: ${unknown.map((s) => `${s} × ${qtyBySku.get(s)}`).join(', ')}.` : null,
         noPrice.length ? `Sin precio en la lista: ${noPrice.map((i) => priced.get(i.variantId)!.sku).join(', ')}.` : null,
       ]

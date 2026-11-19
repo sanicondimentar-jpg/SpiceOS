@@ -1,4 +1,4 @@
-import { COMBOS, findCombo, priceCombo, type PricedCombo } from '../../catalog/domain/combos';
+import { comboSku } from '../../catalog/domain/combos';
 import { recommendationsText, type Segment } from '../../catalog/domain/recommendations';
 import { isAuthorizedPhone } from '../../receipts/supplier-phones';
 
@@ -65,6 +65,8 @@ export interface CatalogItem {
   /** Hay stock disponible ahora (existente menos reservado). Los sueltos se arman abriendo cajas. */
   inStock: boolean;
   loose: boolean;
+  /** Si es un combo: su código corto, los sobres que lleva y el descuento de primera compra. */
+  combo?: { code: string; items: { sku: string; description: string; quantity: number }[]; looseTotal: number | null; firstPurchaseDiscountPct: number };
 }
 
 const ars = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
@@ -76,7 +78,8 @@ export const money = (n: number) => ars.format(Math.round(n)).replace(/\s/g, ' '
  * Los sueltos se arman abriendo cajas, así que se ofrecen siempre (el equipo confirma al revisar).
  */
 export function catalogText(items: CatalogItem[]): string {
-  const sorted = [...items].sort((a, b) => a.product.localeCompare(b.product, 'es', { sensitivity: 'base' }) || a.sku.localeCompare(b.sku));
+  // Los combos van aparte (comboText), con sus sobres.
+  const sorted = [...items].filter((i) => !i.combo).sort((a, b) => a.product.localeCompare(b.product, 'es', { sensitivity: 'base' }) || a.sku.localeCompare(b.sku));
   const line = (i: CatalogItem) => {
     const unit = i.unitsPerBox ? ` por caja de ${i.unitsPerBox} (${money(i.price / i.unitsPerBox)} c/u)` : '';
     const hide = !i.inStock && !i.loose ? ' — NO OFRECER' : '';
@@ -116,29 +119,18 @@ export function recommendedText(lists: Record<Segment, string[]>, catalog: Catal
 
 // ───────────────────────────── Combos minoristas ─────────────────────────────
 
-/** Los combos (los mismos que muestra la web) con los precios vigentes; null si falta algún sobre. */
-export function combosInfo(catalog: CatalogItem[]): { code: string; name: string; priced: PricedCombo | null }[] {
-  const bySku = new Map(catalog.map((c) => [c.sku.toUpperCase(), c]));
-  return COMBOS.map((c) => ({ code: c.code, name: c.name, priced: priceCombo(c, (sku) => bySku.get(sku.toUpperCase())?.price) }));
-}
-
 export function comboText(catalog: CatalogItem[]): string {
-  const bySku = new Map(catalog.map((c) => [c.sku.toUpperCase(), c]));
-  const available = combosInfo(catalog).filter((c) => c.priced);
-  if (!available.length) return 'Combos para minoristas: no hay disponibles por ahora (no los ofrezcas).';
-  const blocks = available.map(({ code, name, priced }) => {
-    const p = priced!;
-    const items = p.lines.map((l) => {
-      const c = bySku.get(l.sku.toUpperCase());
-      return `- ${l.quantity} × ${c ? `${c.product} ${c.presentation}` : l.sku} [${l.sku}]`;
-    });
+  const combos = catalog.filter((c) => c.combo);
+  if (!combos.length) return 'Combos para minoristas: no hay disponibles por ahora (no los ofrezcas).';
+  const blocks = combos.map((c) => {
+    const k = c.combo!;
     const price =
-      p.firstPurchaseDiscountPct > 0
-        ? `Precio: ${money(p.price)}. En la primera compra del cliente tiene ${p.firstPurchaseDiscountPct}% de descuento: ${money(p.firstPurchasePrice)}.`
-        : p.price < p.listTotal
-          ? `Precio: ${money(p.price)} (sueltos suman ${money(p.listTotal)}). Sin otros descuentos.`
-          : `Precio: ${money(p.price)}.`;
-    return [`${name} (código de combo "${code}"):`, ...items, price].join('\n');
+      k.firstPurchaseDiscountPct > 0
+        ? `Precio: ${money(c.price)}. En la primera compra del cliente tiene ${k.firstPurchaseDiscountPct}% de descuento: ${money(c.price * (1 - k.firstPurchaseDiscountPct / 100))}.`
+        : k.looseTotal != null && c.price < k.looseTotal
+          ? `Precio: ${money(c.price)} (sueltos suman ${money(k.looseTotal)}). Sin otros descuentos.`
+          : `Precio: ${money(c.price)}.`;
+    return [`${c.product} (código de combo "${k.code}"):`, ...k.items.map((i) => `- ${i.quantity} × ${i.description} [${i.sku}]`), price].join('\n');
   });
   return ['Combos para minoristas (se piden con el campo "combos" de registrar_pedido, con su código):', ...blocks].join('\n\n');
 }
@@ -211,22 +203,17 @@ export function priceDraft(lines: DraftLine[], catalog: CatalogItem[], opts: Dra
   });
   const priced = [...qty].map(([sku, quantity]) => line(bySku.get(sku)!, quantity, 0, null));
 
+  // Combos: una línea con su SKU ("COMBO-ESENCIAL"); al reservarse descuenta cada sobre.
   const comboUnavailable: string[] = [];
-  const pricedCombos = new Map(combosInfo(catalog).map((c) => [c.code, c.priced]));
   for (const req of opts.combos) {
     const quantity = Math.max(0, Math.trunc(req.quantity));
     if (!quantity) continue;
-    const def = findCombo(req.code);
-    const combo = def && pricedCombos.get(def.code);
-    if (!combo) {
+    const c = bySku.get(comboSku(req.code));
+    if (!c?.combo) {
       comboUnavailable.push(req.code);
       continue;
     }
-    const pct = opts.firstPurchase ? combo.firstPurchaseDiscountPct : 0;
-    for (const l of combo.lines) {
-      const c = bySku.get(l.sku.toUpperCase())!;
-      priced.push({ ...line(c, l.quantity * quantity, pct, combo.name), unitPrice: l.unitPrice, lineTotal: round2(l.unitPrice * l.quantity * quantity * (1 - pct / 100)) });
-    }
+    priced.push(line(c, quantity, opts.firstPurchase ? c.combo.firstPurchaseDiscountPct : 0, c.product));
   }
 
   const subtotal = round2(priced.reduce((s, l) => s + l.unitPrice * l.quantity, 0));

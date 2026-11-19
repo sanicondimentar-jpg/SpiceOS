@@ -42,6 +42,8 @@ export class InventoryService {
           AND (${query.warehouseId ?? null}::uuid IS NULL OR s.warehouse_id = ${query.warehouseId ?? null}::uuid)
         LEFT JOIN lots l ON l.id = s.lot_id
         WHERE v.is_active
+          -- Los combos no tienen stock propio (descuentan el de sus sobres).
+          AND NOT EXISTS (SELECT 1 FROM kit_components k WHERE k.kit_variant_id = v.id)
           AND (${like}::text IS NULL OR v.sku ILIKE ${like} OR p.name ILIKE ${like} OR v.name ILIKE ${like})
         GROUP BY v.id, p.name
         ORDER BY p.name, v.sku`;

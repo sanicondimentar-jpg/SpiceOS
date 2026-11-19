@@ -227,11 +227,16 @@ function Lines({ order }: { order: OrderDetail }) {
               <td className="px-4 py-2.5">
                 <div>{l.description}</div>
                 <div className="font-mono text-xs text-muted-foreground">{l.sku}</div>
+                {l.components.length > 0 && (
+                  <ul className="mt-1 text-xs text-muted-foreground">
+                    {l.components.map((c) => <li key={c.sku}>{number(c.quantity)} × {c.description} <span className="font-mono">[{c.sku}]</span></li>)}
+                  </ul>
+                )}
               </td>
               <td className="px-4 py-2.5 text-right tabular-nums">{number(l.quantity)}</td>
               {showLots && (
                 <td className="px-4 py-2.5 text-xs">
-                  {l.lots.map((x, i) => <div key={i}>{x.lot ?? 'sin lote'} × {number(x.quantity)}{x.expiresAt && <span className="text-muted-foreground"> · vence {date(x.expiresAt)}</span>}</div>)}
+                  {l.lots.map((x, i) => <div key={i}>{x.sku !== l.sku && <span className="font-mono">{x.sku} </span>}{x.lot ?? 'sin lote'} × {number(x.quantity)}{x.expiresAt && <span className="text-muted-foreground"> · vence {date(x.expiresAt)}</span>}</div>)}
                 </td>
               )}
               {showAvailable && (

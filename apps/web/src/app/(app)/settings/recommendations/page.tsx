@@ -45,10 +45,11 @@ export default function RecommendationsPage() {
 
       {segment === 'MINORISTA' &&
         data.combos.map((c) => (
-          <Card key={c.code}>
+          <Card key={c.sku}>
             <CardHeader>
               <CardTitle className="text-base">
-                {c.name} {c.price != null && <span className="font-normal text-muted-foreground">· {money(c.price)}</span>}
+                {c.name} <span className="font-mono text-xs font-normal text-muted-foreground">[{c.sku}]</span>
+                {c.price != null && <span className="font-normal text-muted-foreground"> · {money(c.price)}</span>}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1 text-sm">
@@ -59,11 +60,10 @@ export default function RecommendationsPage() {
                 </div>
               ))}
               <p className="pt-2 text-muted-foreground">
-                {c.fixedPrice != null
-                  ? `Precio fijo${c.listTotal != null ? ` (sueltos suman ${money(c.listTotal)})` : ''}.`
-                  : 'Vale lo que suman los sobres a precio Minorista.'}
-                {c.firstPurchaseDiscountPct > 0 && ` ${c.firstPurchaseDiscountPct}% de descuento en la primera compra.`}
-                {c.price == null && ' No se ofrece: falta algún sobre o su precio.'} Por ahora los combos se cambian pidiéndolo (no desde esta pantalla).
+                {c.looseTotal != null && `Sueltos suman ${money(c.looseTotal)}. `}
+                {c.firstPurchaseDiscountPct > 0 && `${c.firstPurchaseDiscountPct}% de descuento en la primera compra. `}
+                {!c.available && 'No se ofrece: está dado de baja, le falta precio Minorista o tiene un sobre dado de baja. '}
+                Se vende en una línea y al confirmar el pedido reserva cada sobre. El precio se cambia en Listas de precios.
               </p>
             </CardContent>
           </Card>

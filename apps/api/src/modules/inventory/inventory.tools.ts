@@ -37,6 +37,7 @@ export class InventoryAiTools {
         LEFT JOIN stock s ON s.variant_id = v.id
         LEFT JOIN usage u ON u.variant_id = v.id
         WHERE v.is_active AND coalesce(s.available, 0) <= v.reorder_point
+          AND NOT EXISTS (SELECT 1 FROM kit_components k WHERE k.kit_variant_id = v.id)
         ORDER BY days_of_cover NULLS FIRST LIMIT 100`,
     );
   }
