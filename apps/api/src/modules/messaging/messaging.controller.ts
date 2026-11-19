@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import {
   PERMISSIONS,
@@ -7,15 +8,17 @@ import {
   sendMessageSchema,
   updateConversationSchema,
   whatsappAccountSchema,
+  whatsappProfileSchema,
   type ConversationListQuery,
   type SendMessageInput,
   type UpdateConversationInput,
   type WhatsappAccountInput,
+  type WhatsappProfileInput,
 } from '@spiceos/contracts';
 import { RequirePermissions } from '../../shared/auth/decorators';
 import { ZodPipe } from '../../shared/http/zod-validation.pipe';
 import { ConversationsService } from './conversations.service';
-import { WhatsappAccountService } from './whatsapp-account.service';
+import { MAX_PROFILE_PHOTO_BYTES, WhatsappAccountService } from './whatsapp-account.service';
 
 @ApiTags('WhatsApp')
 @ApiBearerAuth()
@@ -91,6 +94,21 @@ export class WhatsappAccountController {
   @RequirePermissions(PERMISSIONS.admin.settings)
   save(@Req() req: Request, @Body(new ZodPipe(whatsappAccountSchema)) body: WhatsappAccountInput) {
     return this.accounts.save(body, webhookUrl(req));
+  }
+
+  @Get('profile')
+  @RequirePermissions(PERMISSIONS.admin.settings)
+  profile() {
+    return this.accounts.getProfile();
+  }
+
+  /** Foto (campo "photo", opcional) y textos del perfil público, en multipart. */
+  @Put('profile')
+  @ApiConsumes('multipart/form-data')
+  @RequirePermissions(PERMISSIONS.admin.settings)
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: MAX_PROFILE_PHOTO_BYTES, files: 1 } }))
+  updateProfile(@UploadedFile() photo: Express.Multer.File | undefined, @Body(new ZodPipe(whatsappProfileSchema)) body: WhatsappProfileInput) {
+    return this.accounts.updateProfile(body, photo && { data: photo.buffer, mimeType: photo.mimetype });
   }
 }
 

@@ -13,6 +13,40 @@ export const whatsappAccountSchema = z.object({
 });
 export type WhatsappAccountInput = z.infer<typeof whatsappAccountSchema>;
 
+/** Rubros que acepta Meta para el perfil de WhatsApp Business. */
+export const WHATSAPP_VERTICALS = [
+  'GROCERY', 'RESTAURANT', 'RETAIL', 'OTHER', 'PROF_SERVICES', 'EVENT_PLAN', 'HOTEL', 'EDU', 'HEALTH', 'BEAUTY', 'APPAREL', 'AUTO', 'ENTERTAIN',
+  'FINANCE', 'GOVT', 'NONPROFIT', 'TRAVEL',
+] as const;
+
+const optionalUrl = z
+  .string()
+  .trim()
+  .max(256)
+  .transform((v) => (v && !/^https?:\/\//i.test(v) ? `https://${v}` : v))
+  .refine((v) => !v || /^https?:\/\/[^\s.]+\.[^\s]+$/i.test(v), 'La web tiene que ser una dirección, ej. www.tuweb.com.ar')
+  .optional();
+
+/**
+ * Perfil público del número de WhatsApp (lo que ve el cliente al tocar el nombre).
+ * Viaja como multipart (junto con la foto), por eso todos los campos son texto. Vacío = no se cambia en Meta.
+ */
+export const whatsappProfileSchema = z.object({
+  about: z.string().trim().max(139, 'La info corta admite hasta 139 caracteres').optional(),
+  description: z.string().trim().max(512, 'La descripción admite hasta 512 caracteres').optional(),
+  address: z.string().trim().max(256, 'La dirección admite hasta 256 caracteres').optional(),
+  email: z
+    .string()
+    .trim()
+    .max(128)
+    .refine((v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), 'Email inválido')
+    .optional(),
+  website: optionalUrl,
+  website2: optionalUrl,
+  vertical: z.enum(WHATSAPP_VERTICALS).optional(),
+});
+export type WhatsappProfileInput = z.infer<typeof whatsappProfileSchema>;
+
 export const conversationListQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
   status: z.enum(['OPEN', 'CLOSED', 'ALL']).default('OPEN'),

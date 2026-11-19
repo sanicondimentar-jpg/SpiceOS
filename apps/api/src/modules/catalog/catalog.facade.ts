@@ -24,6 +24,8 @@ export class CatalogFacade {
       where: { id: { in: ids }, isActive: true },
       include: {
         product: { select: { name: true } },
+        // Un combo cuesta lo que cuestan sus sobres.
+        kitComponents: { select: { quantity: true, component: { select: { currentCost: true } } } },
         priceListItems: listIds.length ? { where: { priceListId: { in: listIds } }, orderBy: { minQuantity: 'desc' } } : false,
       },
     });
@@ -42,7 +44,9 @@ export class CatalogFacade {
             sku: v.sku,
             name: `${v.product.name} ${v.name}`,
             listPrice: tier ? Number(tier.price) : null,
-            cost: Number(v.currentCost),
+            cost: v.kitComponents.length
+              ? Math.round(v.kitComponents.reduce((sum, c) => sum + Number(c.component.currentCost) * Number(c.quantity), 0) * 10000) / 10000
+              : Number(v.currentCost),
             minMarginPct: Number(v.minMarginPct),
           },
         ];

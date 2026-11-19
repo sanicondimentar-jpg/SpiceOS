@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, Select } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { useProducts } from '@/lib/catalog';
-import { useRecommendations, type ComboView } from '@/lib/recommendations';
+import { useRecommendations } from '@/lib/recommendations';
 import { optNumber, optText } from '@/lib/form';
 import { useCustomers, useMe } from '@/lib/hooks';
 import { useInvoicingStatus } from '@/lib/invoicing';
@@ -89,25 +89,8 @@ export function OrderForm({ initial, lockCustomer, quote, submitting, error, act
     if (value.lines.some((x) => x.variantId === l.variantId)) return;
     set({ lines: [...value.lines, { ...l, quantity: '1', unitPrice: '', discountPct: '0' }] });
   };
-  // Combo: un sobre por línea con su parte del precio del combo (así descuenta el stock de cada sobre).
-  const combos = useRecommendations().data?.combos.filter((c) => c.price != null && c.items.every((i) => i.variantId && i.unitPrice != null)) ?? [];
-  const [comboError, setComboError] = useState<string | null>(null);
-  const addCombo = (c: ComboView) => {
-    const lines = [...value.lines];
-    for (const it of c.items) {
-      const price = String(it.unitPrice);
-      const k = lines.findIndex((l) => l.variantId === it.variantId);
-      if (k < 0) {
-        lines.push({ variantId: it.variantId!, sku: it.sku, description: `${it.product ?? it.sku} ${it.presentation ?? ''}`.trim(), quantity: String(it.quantity), unitPrice: price, discountPct: '0' });
-      } else if (lines[k]!.unitPrice === price && lines[k]!.discountPct === '0') {
-        lines[k] = { ...lines[k]!, quantity: String((optNumber(lines[k]!.quantity) ?? 0) + it.quantity) };
-      } else {
-        return setComboError(`${it.sku} ya está cargado suelto con otro precio: quitalo, agregá el ${c.name} y después sumá los sueltos en otro pedido o ajustá el precio a mano.`);
-      }
-    }
-    setComboError(null);
-    set({ lines, notes: value.notes.includes(c.name) ? value.notes : [value.notes, `Lleva ${c.name}`].filter(Boolean).join('. ') });
-  };
+  // Combos: un producto más (una línea); al confirmar el pedido reserva cada sobre.
+  const combos = useRecommendations().data?.combos.filter((c) => c.available) ?? [];
   const updateLine = (i: number, patch: Partial<OrderDraftLine>) => set({ lines: value.lines.map((l, j) => (j === i ? { ...l, ...patch } : l)) });
 
   const submit = (onSubmit: (d: OrderFormSubmit) => void) => {
@@ -178,11 +161,18 @@ export function OrderForm({ initial, lockCustomer, quote, submitting, error, act
           <CardTitle>Productos</CardTitle>
           <VariantPicker onPick={addLine} />
           {combos.map((c) => (
-            <Button key={c.code} type="button" size="sm" variant="outline" onClick={() => addCombo(c)} title={c.items.map((i) => `${i.quantity} × ${i.product}`).join(', ')}>
-              <Plus className="mr-1 h-4 w-4" /> {c.name} ({money(c.price!)})
+            <Button
+              key={c.sku}
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={value.lines.some((l) => l.variantId === c.variantId)}
+              onClick={() => addLine({ variantId: c.variantId, sku: c.sku, description: `${c.name} ${c.presentation}` })}
+              title={c.items.map((i) => `${i.quantity} × ${i.product}`).join(', ')}
+            >
+              <Plus className="mr-1 h-4 w-4" /> {c.name}
             </Button>
           ))}
-          {comboError && <p className="w-full text-sm text-destructive">{comboError}</p>}
         </CardHeader>
         <table className="w-full min-w-[860px] text-sm">
           <thead className="border-y text-left text-xs text-muted-foreground">

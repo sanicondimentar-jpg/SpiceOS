@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import type { WhatsappAccountInput } from '@spiceos/contracts';
+import type { WhatsappAccountInput, WhatsappProfileInput } from '@spiceos/contracts';
 import { UnitOfWork } from '../../shared/unit-of-work';
 import { BusinessRuleError, ConflictError } from '../../shared/domain/errors';
 import { EncryptionService } from '../../shared/crypto/encryption.service';
 import { SystemPrismaService } from '../../shared/prisma/prisma.service';
 import { RequestContextStore } from '../../shared/tenancy/request-context';
 import { WhatsappClient } from './whatsapp.client';
+
+const PHOTO_TYPES = ['image/jpeg', 'image/png'];
+export const MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024;
 
 /**
  * Cuenta de WhatsApp Cloud API de la empresa, cargada desde Configuración.
@@ -96,5 +99,69 @@ export class WhatsappAccountService {
       });
     });
     return { ...(await this.get(webhookUrl)), subscribeError };
+  }
+
+  private async credentials() {
+    const a = await this.uow.read((tx) => tx.whatsappAccount.findFirst());
+    if (!a) throw new BusinessRuleError('Primero conectá el número de WhatsApp');
+    return { phoneNumberId: a.phoneNumberId, token: this.crypto.decrypt(a.encryptedToken) };
+  }
+
+  /** Perfil público del número tal como está hoy en Meta. */
+  async getProfile() {
+    const { phoneNumberId, token } = await this.credentials();
+    try {
+      const p = await this.whatsapp.getProfile(phoneNumberId, token);
+      return {
+        about: p.about ?? '',
+        description: p.description ?? '',
+        address: p.address ?? '',
+        email: p.email ?? '',
+        website: p.websites?.[0] ?? '',
+        website2: p.websites?.[1] ?? '',
+        vertical: p.vertical && p.vertical !== 'UNDEFINED' ? p.vertical : '',
+        photoUrl: p.profile_picture_url ?? null,
+      };
+    } catch (e) {
+      throw new BusinessRuleError(`Meta no devolvió el perfil: ${(e as Error).message}`);
+    }
+  }
+
+  /** Publica el perfil en Meta. Los campos vacíos no se tocan; la foto es opcional. */
+  async updateProfile(input: WhatsappProfileInput, photo?: { data: Buffer; mimeType: string }) {
+    const { phoneNumberId, token } = await this.credentials();
+    if (photo && !PHOTO_TYPES.includes(photo.mimeType)) throw new BusinessRuleError('La foto tiene que ser JPG o PNG');
+    let handle: string | undefined;
+    if (photo) {
+      try {
+        handle = await this.whatsapp.uploadProfilePicture(token, photo.data, photo.mimeType);
+      } catch (e) {
+        throw new BusinessRuleError(`Meta no aceptó la foto: ${(e as Error).message}`);
+      }
+    }
+    const websites = [input.website, input.website2].filter((w): w is string => !!w);
+    const profile = {
+      ...(input.about && { about: input.about }),
+      ...(input.description && { description: input.description }),
+      ...(input.address && { address: input.address }),
+      ...(input.email && { email: input.email }),
+      ...(input.vertical && { vertical: input.vertical }),
+      ...(websites.length && { websites }),
+      ...(handle && { profile_picture_handle: handle }),
+    };
+    try {
+      await this.whatsapp.updateProfile(phoneNumberId, token, profile);
+    } catch (e) {
+      throw new BusinessRuleError(`Meta no aceptó el perfil: ${(e as Error).message}`);
+    }
+    await this.uow.run(async (_tx, scope) => {
+      scope.auditLog({
+        action: 'whatsapp_account.profile_update',
+        entityType: 'whatsapp_account',
+        entityId: phoneNumberId,
+        after: { ...profile, profile_picture_handle: handle ? 'nueva foto' : undefined },
+      });
+    });
+    return this.getProfile();
   }
 }

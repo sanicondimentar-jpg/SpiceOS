@@ -2,7 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'node:crypto';
 import { LlmService } from '../../shared/ai/llm.service';
-import { findCombo } from '../catalog/domain/combos';
+import { loadCombos } from '../catalog/application/combos';
+import { comboSku } from '../catalog/domain/combos';
 import { env } from '../../shared/config/env';
 import { AggregateRoot } from '../../shared/domain/aggregate-root';
 import { DomainEvent } from '../../shared/domain/domain-event';
@@ -660,7 +661,8 @@ export class SalesAssistantService {
       where: {
         priceListId: { in: [wholesale.id, ...(retail ? [retail.id] : [])] },
         minQuantity: 1,
-        variant: { isActive: true, product: { isActive: true, deletedAt: null } },
+        // Los combos van aparte (con sus sobres).
+        variant: { isActive: true, kitComponents: { none: {} }, product: { isActive: true, deletedAt: null } },
       },
       select: { priceListId: true, price: true, variant: { select: { id: true, sku: true, name: true, product: { select: { name: true } } } } },
     });
@@ -669,7 +671,9 @@ export class SalesAssistantService {
       (await tx.branch.findFirst({ where: { isMain: true }, select: { id: true } })) ??
       (await tx.branch.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } }));
     const warehouse = branch && (await tx.warehouse.findFirst({ where: { branchId: branch.id, isActive: true }, orderBy: { code: 'asc' }, select: { id: true } }));
-    const available = warehouse ? await this.inventory.available(tx, warehouse.id, [...new Set(rows.map((r) => r.variant.id))]) : new Map<string, number>();
+    const combos = (await loadCombos(tx)).filter((c) => c.available);
+    const ids = [...new Set([...rows.map((r) => r.variant.id), ...combos.map((c) => c.variantId)])];
+    const available = warehouse ? await this.inventory.available(tx, warehouse.id, ids) : new Map<string, number>();
 
     const items = new Map<string, CatalogItem>();
     for (const r of rows) {
@@ -685,6 +689,25 @@ export class SalesAssistantService {
         unitsPerBox: p.kind === 'box' ? p.units : null,
         inStock: (available.get(r.variant.id) ?? 0) > 0,
         loose: p.kind === 'loose',
+      });
+    }
+    // Combos: se venden en una línea con su SKU y descuentan cada sobre. Los sobres sueltos se arman
+    // abriendo cajas, así que se ofrecen igual que los sueltos (el equipo confirma al revisar).
+    for (const c of combos) {
+      items.set(c.sku, {
+        sku: c.sku,
+        product: c.name,
+        presentation: c.presentation,
+        price: c.price!,
+        unitsPerBox: null,
+        inStock: (available.get(c.variantId) ?? 0) > 0,
+        loose: true,
+        combo: {
+          code: c.code,
+          items: c.items.map((i) => ({ sku: i.sku, description: `${i.product} ${i.presentation}`, quantity: i.quantity })),
+          looseTotal: c.looseTotal,
+          firstPurchaseDiscountPct: c.firstPurchaseDiscountPct,
+        },
       });
     }
     return [...items.values()];
@@ -723,7 +746,7 @@ interface OrderToolInput {
 /** Lo que pidió el modelo; acepta el formato viejo (un número = combos Chef) por si queda en un historial. */
 function comboRequests(input: OrderToolInput): { code: string; quantity: number }[] {
   const raw = input.combos as unknown;
-  if (typeof raw === 'number') return raw > 0 ? [{ code: 'BASICO', quantity: raw }] : [];
+  if (typeof raw === 'number') return raw > 0 ? [{ code: 'CHEF', quantity: raw }] : [];
   if (!Array.isArray(raw)) return [];
   return raw.map((c) => ({ code: String(c?.codigo ?? ''), quantity: Math.trunc(Number(c?.cantidad)) || 0 })).filter((c) => c.code && c.quantity > 0);
 }
@@ -731,7 +754,7 @@ function comboRequests(input: OrderToolInput): { code: string; quantity: number 
 /** "1 × Combo Esencial, 2 × Combo Chef". */
 function comboSummary(input: OrderToolInput): string {
   return comboRequests(input)
-    .map((c) => `${c.quantity} × ${findCombo(c.code)?.name ?? c.code}`)
+    .map((c) => `${c.quantity} × ${comboSku(c.code)}`)
     .join(', ');
 }
 

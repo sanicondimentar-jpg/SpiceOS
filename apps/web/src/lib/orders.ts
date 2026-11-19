@@ -103,7 +103,9 @@ export interface OrderDetail {
     available?: number;
     backorderQty: number;
     purchaseOrder: { id: string; number: string; status: string } | null;
-    lots: { lot: string | null; expiresAt: string | null; quantity: number }[];
+    lots: { sku: string; lot: string | null; expiresAt: string | null; quantity: number }[];
+    /** Combo: los sobres que lleva (cantidad total de la línea). */
+    components: { sku: string; description: string; quantity: number }[];
   }[];
   history: { from: OrderStatus | null; to: OrderStatus; at: string; by: string | null; reason: string | null }[];
 }

@@ -31,9 +31,6 @@ export const DEFAULT_RECOMMENDATIONS: Record<Segment, string[]> = {
   PASTELERIA: ['75', '77', '480', '344', '438', '271', '204', '124', '278'],
 };
 
-/** Los combos para minoristas viven en combos.ts. */
-export { BASIC_COMBO as RETAIL_COMBO } from './combos';
-
 /** Limpia una lista: códigos en mayúscula, sin espacios ni repetidos, en el orden dado. */
 export function normalizeSkus(skus: string[]): string[] {
   const seen = new Set<string>();

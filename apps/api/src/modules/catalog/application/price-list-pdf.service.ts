@@ -53,7 +53,8 @@ export class PriceListPdfService {
   private async rows(tx: Tx, priceListId: string): Promise<PriceRow[]> {
     const items = await tx.priceListItem.findMany({
       // Precio por unidad (cantidad mínima 1); todos los productos activos, haya stock o no.
-      where: { priceListId, minQuantity: 1, variant: { isActive: true, product: { isActive: true, deletedAt: null } } },
+      // Sin combos: se ofrecen en la web y por WhatsApp a los minoristas.
+      where: { priceListId, minQuantity: 1, variant: { isActive: true, kitComponents: { none: {} }, product: { isActive: true, deletedAt: null } } },
       select: { price: true, variant: { select: { sku: true, name: true, netWeightKg: true, product: { select: { name: true } } } } },
     });
     return items.map((i) => ({

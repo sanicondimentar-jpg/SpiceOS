@@ -18,6 +18,21 @@ export interface MovementInput {
   reason?: string;
 }
 
+/** Un sobre dentro de un combo. */
+export interface KitComponentRef {
+  variantId: string;
+  sku: string;
+  /** Cuántos lleva cada combo. */
+  quantity: number;
+  cost: number;
+}
+
+/** Combos completos que se pueden armar con el disponible de cada componente. */
+export function kitAvailable(components: { variantId: string; quantity: number }[], available: Map<string, number>): number {
+  if (!components.length) return 0;
+  return Math.max(0, Math.min(...components.map((c) => Math.floor((available.get(c.variantId) ?? 0) / c.quantity))));
+}
+
 /** Asignación guardada en una reserva: de qué saldo y lote sale cada parte. */
 export interface StoredAllocation {
   stockItemId: string;
@@ -137,8 +152,39 @@ export class InventoryFacade {
     return tx.lot.create({ data: { tenantId: ctx.tenantId, variantId, code, expiresAt: expiresAt ?? null } });
   }
 
-  /** Disponible (existente − reservado) por variante en un depósito. */
+  /** Componentes de los combos de la lista (los que no son combo no aparecen). */
+  async kitComponents(tx: Tx, variantIds: string[]): Promise<Map<string, KitComponentRef[]>> {
+    if (!variantIds.length) return new Map();
+    const rows = await tx.kitComponent.findMany({
+      where: { kitVariantId: { in: [...new Set(variantIds)] } },
+      select: { kitVariantId: true, componentVariantId: true, quantity: true, component: { select: { sku: true, currentCost: true } } },
+    });
+    const out = new Map<string, KitComponentRef[]>();
+    for (const r of rows) {
+      const list = out.get(r.kitVariantId) ?? [];
+      list.push({ variantId: r.componentVariantId, sku: r.component.sku, quantity: Number(r.quantity), cost: Number(r.component.currentCost) });
+      out.set(r.kitVariantId, list);
+    }
+    return out;
+  }
+
+  /**
+   * Disponible (existente − reservado) por variante en un depósito.
+   * Un combo no tiene stock propio: alcanza para tantos combos como permita su componente más escaso.
+   */
   async available(tx: Tx, warehouseId: string, variantIds: string[]): Promise<Map<string, number>> {
+    if (!variantIds.length) return new Map();
+    const kits = await this.kitComponents(tx, variantIds);
+    if (kits.size) {
+      const componentIds = [...kits.values()].flatMap((c) => c.map((x) => x.variantId));
+      const base = await this.stockAvailable(tx, warehouseId, [...new Set([...variantIds.filter((id) => !kits.has(id)), ...componentIds])]);
+      for (const [kitId, comps] of kits) base.set(kitId, kitAvailable(comps, base));
+      return base;
+    }
+    return this.stockAvailable(tx, warehouseId, variantIds);
+  }
+
+  private async stockAvailable(tx: Tx, warehouseId: string, variantIds: string[]): Promise<Map<string, number>> {
     if (!variantIds.length) return new Map();
     const rows = await tx.$queryRaw<{ variant_id: string; available: number }[]>`
       SELECT s.variant_id, sum(s.on_hand - s.reserved)::float AS available
