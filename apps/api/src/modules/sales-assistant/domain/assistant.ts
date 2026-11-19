@@ -41,15 +41,67 @@ export function decide(i: DecisionInput): Decision {
   if (i.handoff) return { answer: false, reason: 'derivado a una persona' };
   if (i.pausedUntil && i.pausedUntil > i.now) return { answer: false, reason: 'en pausa: respondió una persona' };
   if (SILENT_TYPES.has(i.messageType)) return { answer: false, reason: `mensaje de tipo ${i.messageType}` };
-  if (isWebOrderMessage(i.text)) return { answer: false, reason: 'pedido armado en la web (lo registra el sistema)' };
+  // Los pedidos armados en la web sí se contestan: el sistema los registra y el asistente le confirma al cliente enseguida.
   if (i.repliesLast24h >= MAX_REPLIES_PER_DAY) return { answer: false, reason: 'llegó al tope de respuestas del día' };
   return { answer: true };
 }
 
 /** Pedido armado en la web (con o sin número): lo registra el sistema y lo revisa una persona. */
 export function isWebOrderMessage(text: string | null): boolean {
-  const head = text?.trim().split('\n')[0]?.replace(/\*/g, '').trim() ?? '';
-  return /^Pedido\b.*Sabor a Casa$/i.test(head);
+  return /^Pedido\b.*Sabor a Casa$/i.test(webOrderHead(text));
+}
+
+/** El número del pedido web ("*Pedido PED-00000012 — Sabor a Casa*"), o null si vino sin número. */
+export function webOrderNumber(text: string | null): string | null {
+  return webOrderHead(text).match(/^Pedido\s+(PED-[\w-]+)/i)?.[1]?.toUpperCase() ?? null;
+}
+
+function webOrderHead(text: string | null): string {
+  return text?.trim().split('\n')[0]?.replace(/\*/g, '').trim() ?? '';
+}
+
+export interface WebOrderSummary {
+  number: string;
+  /** Lo que ve el cliente (STATUS_FOR_CUSTOMER). */
+  status: string;
+  retail: boolean;
+  /** Suma de los productos, sin impuestos (como lo muestra la web). */
+  total: number;
+  lines: string[];
+  hasAddress: boolean;
+}
+
+/**
+ * Instrucciones para contestar en el momento un pedido que el cliente armó en la web y mandó por WhatsApp.
+ * El pedido ya lo registró el sistema: el asistente confirma, resume y cuenta los próximos pasos, sin registrarlo de nuevo.
+ */
+export function webOrderNote(order: WebOrderSummary | null, minOrder: number): string {
+  const common = [
+    'El último mensaje del cliente es un pedido que armó en la web y nos mandó por WhatsApp. Respondele ahora, en un solo mensaje corto:',
+    '- agradecele y confirmale que lo recibimos;',
+    '- contale los próximos pasos: una persona del equipo lo revisa y le confirma por este chat la entrega (o el retiro) y la forma de pago, sin prometer fechas;',
+  ];
+  if (!order) {
+    return [
+      ...common,
+      '- todavía no tenemos el número de pedido: decile que el equipo lo carga y se lo pasa. No uses registrar_pedido con este pedido.',
+      'Si falta la dirección de entrega con localidad o el horario en que reciben, pedíselos.',
+    ].join('\n');
+  }
+  const below = !order.retail && order.total < minOrder;
+  return [
+    ...common,
+    `- decile el número de pedido, *${order.number}*, que le sirve para seguirlo en www.saboracasa.com.ar/seguimiento;`,
+    '- resumilo en pocas líneas (no repitas todo el detalle que ya mandó) con el total.',
+    order.hasAddress ? null : 'No tenemos su dirección: pedile la dirección de entrega con localidad y el horario en que reciben.',
+    below ? `Es mayorista y el total no llega al pedido mínimo (${money(minOrder)}): avisale con amabilidad cuánto le falta y ofrecele sumar productos.` : null,
+    'Este pedido ya está registrado: NO uses registrar_pedido salvo que el cliente pida cambiarlo (en ese caso mandá el pedido completo y lo reemplaza).',
+    'Si en el mismo mensaje hizo una pregunta, contestala también.',
+    `Pedido registrado: ${order.number}, ${order.retail ? 'minorista' : 'mayorista'}, estado ${order.status}, total ${money(order.total)}.`,
+    ...order.lines.map((l) => `- ${l}`),
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 // ───────────────────────────── Catálogo ─────────────────────────────
