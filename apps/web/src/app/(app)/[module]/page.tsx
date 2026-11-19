@@ -1,26 +1,86 @@
 import { notFound } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 
-// Módulos del roadmap que todavía no tienen pantalla: indica en qué sprint llegan.
-const ROADMAP: Record<string, { title: string; sprint: string }> = {
-  sales: { title: 'Ventas y embudo', sprint: 'Sprint 2' },
-  logistics: { title: 'Logística', sprint: 'Fase 2' },
-  receivables: { title: 'Cobranza', sprint: 'Sprint 3' },
-  documents: { title: 'Documentos', sprint: 'Sprint 4' },
-  automation: { title: 'Automatizaciones', sprint: 'Sprint 5' },
-  analytics: { title: 'Inteligencia comercial', sprint: 'Sprint 5' },
+// Módulos del menú que todavía no tienen pantalla: qué van a hacer y qué se puede usar hoy.
+const PENDING: Record<string, { title: string; summary: string; features: string[]; today?: string }> = {
+  sales: {
+    title: 'Ventas',
+    summary: 'Seguimiento de clientes potenciales y presupuestos, antes de que se conviertan en pedido.',
+    features: [
+      'Presupuestos para enviar por WhatsApp o PDF, que se convierten en pedido con un clic.',
+      'Embudo de oportunidades: a quién le ofrecimos, en qué quedó y cuándo volver a llamar.',
+      'Ventas por vendedor y metas del mes.',
+    ],
+    today: 'Las ventas se cargan desde Pedidos.',
+  },
+  logistics: {
+    title: 'Logística',
+    summary: 'Organización de los repartos de los pedidos listos para entregar.',
+    features: [
+      'Hoja de ruta del día agrupando pedidos por zona.',
+      'Quién reparte, en qué vehículo y en qué orden.',
+      'Marcar entregado desde el celular, con observaciones.',
+    ],
+    today: 'El avance de cada pedido se sigue en el tablero de Inicio.',
+  },
+  receivables: {
+    title: 'Cobranza',
+    summary: 'Lo que nos deben los clientes y los cobros que recibimos.',
+    features: [
+      'Saldo de cada cliente: pedidos entregados menos lo que ya pagó.',
+      'Registrar cobros (efectivo, transferencia, cheque) con su comprobante, aplicados a uno o varios pedidos.',
+      'Deuda por antigüedad y lista de clientes para llamar.',
+    ],
+  },
+  documents: {
+    title: 'Documentos',
+    summary: 'Archivo de documentos del negocio en un solo lugar.',
+    features: [
+      'Fichas técnicas, certificados, contratos y listas de proveedores.',
+      'Conexión con Google Drive para traer los archivos.',
+      'El copiloto puede leerlos para responder preguntas.',
+    ],
+  },
+  automation: {
+    title: 'Automatizaciones',
+    summary: 'Reglas que hacen tareas solas cuando pasa algo.',
+    features: [
+      'Avisos de stock bajo o productos por vencer.',
+      'Recordatorio a clientes con deuda vencida o que hace tiempo no compran.',
+      'Ver qué reglas corrieron y qué hicieron.',
+    ],
+  },
+  analytics: {
+    title: 'Inteligencia',
+    summary: 'Números del negocio para tomar decisiones.',
+    features: [
+      'Ventas y margen por mes, por producto y por cliente.',
+      'Productos que más rotan y los que no se mueven.',
+      'Clientes que dejaron de comprar.',
+    ],
+  },
 };
 
 export default async function ModulePage({ params }: { params: Promise<{ module: string }> }) {
   const { module } = await params;
-  const entry = ROADMAP[module];
+  const entry = PENDING[module];
   if (!entry) notFound();
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-4 text-2xl font-semibold">{entry.title}</h1>
+      <h1 className="mb-1 text-2xl font-semibold">{entry.title}</h1>
+      <p className="mb-4 text-sm text-muted-foreground">Módulo en construcción.</p>
       <Card>
-        <CardContent className="p-6 text-sm text-muted-foreground">
-          La API de este módulo ya está disponible y el copiloto puede consultarlo. La pantalla llega en {entry.sprint}.
+        <CardContent className="space-y-4 p-6 text-sm">
+          <p>{entry.summary}</p>
+          <div>
+            <p className="mb-2 font-medium">Qué va a hacer</p>
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+              {entry.features.map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
+          </div>
+          {entry.today && <p className="text-muted-foreground">Mientras tanto: {entry.today}</p>}
         </CardContent>
       </Card>
     </div>
