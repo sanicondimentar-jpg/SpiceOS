@@ -20,6 +20,7 @@ import {
   type AssistantMode,
   type CatalogItem,
   catalogText,
+  comboText,
   decide,
   type DraftLine,
   money,
@@ -59,9 +60,11 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: 'object',
       properties: {
+        tipo_cliente: { type: 'string', enum: ['mayorista', 'minorista'], description: 'Mayorista: tiene pedido mínimo. Minorista: sin mínimo, entrega o retiro a coordinar.' },
+        combos: { type: 'integer', description: 'Cantidad de combos básicos para minoristas (0 si no lleva).' },
         items: {
           type: 'array',
-          description: 'Productos del pedido, con el código del catálogo (lo que va entre corchetes) y la cantidad de cajas, bolsas o unidades.',
+          description: 'Productos sueltos del pedido (aparte del combo), con el código del catálogo (lo que va entre corchetes) y la cantidad de cajas, bolsas o unidades. Puede estar vacío si solo lleva combos.',
           items: {
             type: 'object',
             properties: { sku: { type: 'string' }, cantidad: { type: 'integer' } },
@@ -72,9 +75,10 @@ const TOOLS: Anthropic.Tool[] = [
         nombre: { type: 'string', description: 'Nombre del cliente o del negocio.' },
         direccion: { type: 'string', description: 'Dirección de entrega (calle y altura).' },
         localidad: { type: 'string' },
+        horario: { type: 'string', description: 'Días y horario en que reciben. Vacío si no lo dijo.' },
         notas: { type: 'string', description: 'Aclaraciones del cliente (horario para recibir, referencias). Vacío si no hay.' },
       },
-      required: ['items', 'nombre', 'direccion', 'localidad', 'notas'],
+      required: ['tipo_cliente', 'combos', 'items', 'nombre', 'direccion', 'localidad', 'horario', 'notas'],
       additionalProperties: false,
     },
   },
@@ -244,7 +248,11 @@ export class SalesAssistantService {
     const state: RunState = { conversation, catalog, minOrder: Number(conversation.account.assistantMinOrder), handedOff: false };
     const system: Anthropic.TextBlockParam[] = [
       { type: 'text', text: ASSISTANT_SYSTEM },
-      { type: 'text', text: `Catálogo vigente (código, producto, presentación, precio, stock):\n${catalogText(catalog)}`, cache_control: { type: 'ephemeral' } },
+      {
+        type: 'text',
+        text: `Catálogo vigente (código, producto, presentación, precio):\n${catalogText(catalog)}\n\n${comboText(catalog)}`,
+        cache_control: { type: 'ephemeral' },
+      },
       {
         type: 'text',
         text: [businessText({ minOrder: state.minOrder, coverage: COVERAGE, notes: conversation.account.assistantNotes, now: new Date() }), this.customerText(conversation)].join('\n\n'),
@@ -353,11 +361,14 @@ export class SalesAssistantService {
   /** Crea (o reemplaza, si nadie lo confirmó) el pedido "por confirmar" de este chat, con los precios del catálogo. */
   private async registerOrder(state: RunState, input: OrderToolInput) {
     const draftLines: DraftLine[] = (input.items ?? []).map((i) => ({ sku: String(i.sku), quantity: Math.trunc(Number(i.cantidad)) }));
-    const draft = priceDraft(draftLines, state.catalog, state.minOrder);
+    const retail = input.tipo_cliente === 'minorista';
+    const firstPurchase = await this.isFirstPurchase(state.conversation);
+    const draft = priceDraft(draftLines, state.catalog, { minOrder: state.minOrder, retail, combos: Number(input.combos) || 0, firstPurchase });
     if (draft.unknown.length) throw new Error(`Estos códigos no están en el catálogo: ${draft.unknown.join(', ')}. Revisalos con el cliente.`);
+    if (draft.comboUnavailable) throw new Error('El combo no está disponible ahora: ofrecé los sueltos por separado.');
     if (!draft.lines.length) throw new Error('El pedido no tiene productos.');
     if (draft.belowMinimum) {
-      throw new Error(`El total es ${money(draft.total)} y el pedido mínimo es ${money(state.minOrder)}: faltan ${money(state.minOrder - draft.total)}. No se registró.`);
+      throw new Error(`El total es ${money(draft.total)} y el pedido mínimo para mayoristas es ${money(state.minOrder)}: faltan ${money(state.minOrder - draft.total)}. No se registró.`);
     }
     const c = state.conversation;
     const ctx = RequestContextStore.get();
@@ -389,12 +400,17 @@ export class SalesAssistantService {
 
       const lines = draft.lines.map((l) => {
         const v = bySku.get(l.sku)!;
-        return { variantId: v.id, quantity: l.quantity, unitPrice: l.unitPrice, discountPct: 0, unitCost: Number(v.currentCost), lineTotal: l.lineTotal };
+        return { variantId: v.id, quantity: l.quantity, unitPrice: l.unitPrice, discountPct: l.discountPct, unitCost: Number(v.currentCost), lineTotal: l.lineTotal };
       });
       const margin = lines.reduce((s, l) => s + l.lineTotal - l.unitCost * l.quantity, 0);
       const notes = [
         'Armado por el asistente de WhatsApp: revisá productos, zona y stock antes de confirmar.',
+        retail ? 'Cliente minorista: sin pedido mínimo; coordinar entrega o retiro.' : 'Cliente mayorista.',
         `Entrega: ${input.direccion.trim()}, ${input.localidad.trim()}.`,
+        input.horario?.trim() ? `Recibe: ${input.horario.trim()}.` : null,
+        Number(input.combos) > 0
+          ? `Lleva ${Number(input.combos)} combo(s) básico(s)${firstPurchase ? ' con 10% por primera compra' : ''}.`
+          : null,
         input.notas?.trim() ? `Notas del cliente: ${input.notas.trim()}` : null,
         draft.noStock.length ? `Sin stock al registrar (confirmar): ${draft.lines.filter((l) => !l.inStock).map((l) => l.description).join(', ')}.` : null,
       ]
@@ -402,8 +418,8 @@ export class SalesAssistantService {
         .join('\n');
       const data = {
         customerId,
-        subtotal: draft.total,
-        discountTotal: 0,
+        subtotal: draft.subtotal,
+        discountTotal: draft.discountTotal,
         total: draft.total,
         taxTotal: orderTax(draft.total, false, await addsVat(tx)).taxTotal,
         marginTotal: Math.round(margin * 100) / 100,
@@ -456,10 +472,28 @@ export class SalesAssistantService {
       numero: result.number,
       reemplazo_al_anterior: result.replaced,
       total: money(draft.total),
-      productos: draft.lines.map((l) => `${l.quantity} × ${l.description} = ${money(l.lineTotal)}`),
-      a_confirmar_por_stock: draft.lines.filter((l) => !l.inStock).map((l) => l.description),
+      productos: draft.lines.map((l) => `${l.quantity} × ${l.description}${l.fromCombo ? ' (combo)' : ''} = ${money(l.lineTotal)}`),
+      descuento: draft.discountTotal > 0 ? `${money(draft.discountTotal)} (10% del combo por primera compra)` : null,
+      entrega: retail ? 'a coordinar con el equipo (entrega o retiro)' : 'la confirma el equipo',
       estado: 'por confirmar: una persona del equipo lo revisa y confirma por este chat la entrega y la forma de pago',
     };
+  }
+
+  /** Primera compra: el cliente no tiene pedidos (fuera del que se está armando en este chat y los cancelados). */
+  private async isFirstPurchase(c: Conversation): Promise<boolean> {
+    const phone = `+${c.waContactId.replace(/^\+/, '')}`;
+    const customerId = c.customerId ?? (await this.uow.read((tx) => this.crm.findIdByPhone(tx, phone)));
+    const others = await this.uow.read((tx) =>
+      tx.salesOrder.count({
+        where: {
+          ...(customerId ? { customerId } : { contactPhone: phone }),
+          status: { not: 'CANCELLED' },
+          // Fuera el pedido que se está armando en este chat (ojo: conversation_id es NULL en los demás).
+          OR: [{ conversationId: null }, { conversationId: { not: c.id } }, { status: { not: 'PENDING_REVIEW' } }],
+        },
+      }),
+    );
+    return others === 0;
   }
 
   private async customerOrders(c: Conversation) {
@@ -580,6 +614,9 @@ export class SalesAssistantService {
 }
 
 interface OrderToolInput {
+  tipo_cliente: 'mayorista' | 'minorista';
+  combos: number;
+  horario: string;
   items: { sku: string; cantidad: number }[];
   nombre: string;
   direccion: string;

@@ -1,4 +1,4 @@
-import { catalogText, decide, isWebOrderMessage, priceDraft, toTurns, type CatalogItem, type DecisionInput } from './assistant';
+import { catalogText, comboInfo, comboText, decide, isWebOrderMessage, priceDraft, toTurns, type CatalogItem, type DecisionInput } from './assistant';
 
 const now = new Date('2026-11-19T15:00:00Z');
 const base: DecisionInput = {
@@ -60,13 +60,27 @@ const catalog: CatalogItem[] = [
   { sku: '386-U', product: 'Condimento para Aves', presentation: 'Frasco 50 g', price: 2300, unitsPerBox: null, inStock: false, loose: true },
 ];
 
+const loose = (sku: string, product: string, price: number): CatalogItem => ({ sku, product, presentation: 'Sobre 25 g', price, unitsPerBox: null, inStock: false, loose: true });
+const comboItems = [loose('179-U', 'Pimienta Negra Molida', 1200), loose('41-U', 'Pimentón Seleccionado', 800), loose('141-U', 'Orégano en Hojas', 1200), loose('60-U', 'Ají Molido', 900)];
+const opts = { minOrder: 50000, retail: false, combos: 0, firstPurchase: false };
+
 describe('catálogo para el asistente', () => {
-  it('muestra precio por caja y por unidad, y el stock', () => {
+  it('separa mayorista y sueltos, y marca lo que no se ofrece sin hablar de stock', () => {
     const text = catalogText(catalog);
-    expect(text).toContain('[386] Condimento para Aves — Frasco 50 g — $ 24.000 por caja de 12 ($ 2.000 c/u) — SIN STOCK');
-    expect(text).toContain('[386-U]');
-    expect(text).toContain('a confirmar');
-    expect(text).toContain('[181] Pimentón Flor Selecto — Bolsa 1 kg — $ 14.400 — hay stock');
+    expect(text).toContain('MAYORISTA (cajas y bolsas):');
+    expect(text).toContain('[386] Condimento para Aves — Frasco 50 g — $ 24.000 por caja de 12 ($ 2.000 c/u) — NO OFRECER');
+    expect(text).toContain('[181] Pimentón Flor Selecto — Bolsa 1 kg — $ 14.400');
+    expect(text).not.toMatch(/stock/i);
+    // Los sueltos se arman abriendo cajas: se ofrecen igual.
+    expect(text.split('SUELTOS PARA MINORISTAS')[1]).toContain('[386-U] Condimento para Aves — Frasco 50 g — $ 2.300\n'.trim());
+    expect(text.split('SUELTOS PARA MINORISTAS')[1]).not.toContain('NO OFRECER');
+  });
+
+  it('arma el combo con los precios vigentes y el 10% de primera compra', () => {
+    const c = comboInfo(comboItems);
+    expect(c).toMatchObject({ available: true, price: 41000, firstPurchasePrice: 36900 });
+    expect(comboText(comboItems)).toContain('$ 36.900');
+    expect(comboInfo(comboItems.slice(1)).available).toBe(false);
   });
 });
 
@@ -79,7 +93,7 @@ describe('pedido del asistente', () => {
         { sku: '386', quantity: 1 },
       ],
       catalog,
-      50000,
+      opts,
     );
     expect(d.lines).toHaveLength(2);
     expect(d.lines[0]).toMatchObject({ sku: '181', quantity: 3, lineTotal: 43200 });
@@ -88,10 +102,24 @@ describe('pedido del asistente', () => {
     expect(d.noStock).toEqual(['386']);
   });
 
-  it('avisa los códigos que no existen y el pedido mínimo', () => {
-    const d = priceDraft([{ sku: '999', quantity: 1 }, { sku: '181', quantity: 1 }], catalog, 50000);
+  it('avisa los códigos que no existen y el pedido mínimo, que no corre para minoristas', () => {
+    const d = priceDraft([{ sku: '999', quantity: 1 }, { sku: '181', quantity: 1 }], catalog, opts);
     expect(d.unknown).toEqual(['999']);
     expect(d.belowMinimum).toBe(true);
+    expect(priceDraft([{ sku: '181', quantity: 1 }], catalog, { ...opts, retail: true }).belowMinimum).toBe(false);
+  });
+
+  it('agrega el combo con descuento solo en la primera compra', () => {
+    const all = [...catalog, ...comboItems];
+    const first = priceDraft([{ sku: '386-U', quantity: 2 }], all, { ...opts, retail: true, combos: 1, firstPurchase: true });
+    expect(first.lines.filter((l) => l.fromCombo)).toHaveLength(4);
+    expect(first.subtotal).toBe(4600 + 41000);
+    expect(first.discountTotal).toBe(4100);
+    expect(first.total).toBe(4600 + 36900);
+    const again = priceDraft([], all, { ...opts, retail: true, combos: 2, firstPurchase: false });
+    expect(again.total).toBe(82000);
+    expect(again.discountTotal).toBe(0);
+    expect(priceDraft([], catalog, { ...opts, combos: 1 }).comboUnavailable).toBe(true);
   });
 });
 

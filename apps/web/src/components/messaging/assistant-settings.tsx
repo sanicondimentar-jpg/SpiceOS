@@ -72,7 +72,7 @@ export function AssistantSettingsCard() {
               onChange={(e) => setV({ ...v, phones: e.target.value })}
             />
           </Field>
-          <Field label="Pedido mínimo ($)" htmlFor="as-min" hint="El asistente no registra pedidos por debajo de este total.">
+          <Field label="Pedido mínimo para mayoristas ($)" htmlFor="as-min" hint="El asistente no registra pedidos mayoristas por debajo de este total. Los minoristas no tienen mínimo.">
             <Input id="as-min" inputMode="numeric" value={v.minOrder} onChange={(e) => setV({ ...v, minOrder: e.target.value.replace(/\D/g, '') })} />
           </Field>
           <Field
@@ -92,7 +92,7 @@ export function AssistantSettingsCard() {
           </Field>
         </div>
         <p className="text-xs text-muted-foreground">
-          Ofrece {data.catalogItems} productos activos de la lista mayorista (con los sueltos), {data.catalogInStock} con stock ahora. Zona: GBA Norte y alrededores.
+          Ofrece {data.catalogItems} productos activos de la lista mayorista (con los sueltos), {data.catalogInStock} con stock ahora. Zona: GBA Norte y alrededores. A los minoristas les ofrece sueltos y el combo básico (10 sobres de pimienta, pimentón, orégano y ají; 10% en la primera compra).
         </p>
         <div className="flex items-center justify-end gap-2">
           {save.error && <p className="mr-auto text-sm text-destructive">{save.error.message}</p>}
