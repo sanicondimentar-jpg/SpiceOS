@@ -3,16 +3,6 @@ import { Card, CardContent } from '@/components/ui/card';
 
 // Módulos del menú que todavía no tienen pantalla: qué van a hacer y qué se puede usar hoy.
 const PENDING: Record<string, { title: string; summary: string; features: string[]; today?: string }> = {
-  sales: {
-    title: 'Ventas',
-    summary: 'Seguimiento de clientes potenciales y presupuestos, antes de que se conviertan en pedido.',
-    features: [
-      'Presupuestos para enviar por WhatsApp o PDF, que se convierten en pedido con un clic.',
-      'Embudo de oportunidades: a quién le ofrecimos, en qué quedó y cuándo volver a llamar.',
-      'Ventas por vendedor y metas del mes.',
-    ],
-    today: 'Las ventas se cargan desde Pedidos.',
-  },
   logistics: {
     title: 'Logística',
     summary: 'Organización de los repartos de los pedidos listos para entregar.',

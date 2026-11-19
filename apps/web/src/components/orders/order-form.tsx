@@ -29,6 +29,7 @@ export interface OrderFormValue {
   warehouseId: string;
   withInvoice: boolean;
   requestedDate: string;
+  validDays: string; // solo presupuestos
   notes: string;
   lines: OrderDraftLine[];
 }
@@ -39,14 +40,19 @@ export interface OrderFormSubmit {
   branchId: string;
   withInvoice: boolean;
   requestedDate?: string;
+  validDays?: number; // solo presupuestos
   notes?: string;
   lines: { variantId: string; quantity: number; unitPrice?: number; discountPct: number }[];
 }
 
-/** Armado de pedido: cliente, depósito y líneas con precio, margen y disponible calculados por la API. */
-export function OrderForm({ initial, lockCustomer, submitting, error, actions }: {
+/**
+ * Armado de pedido: cliente, depósito y líneas con precio, margen y disponible calculados por la API.
+ * Con `quote` arma un presupuesto: en vez de fecha de entrega pide cuántos días vale.
+ */
+export function OrderForm({ initial, lockCustomer, quote, submitting, error, actions }: {
   initial?: Partial<OrderFormValue>;
   lockCustomer?: boolean;
+  quote?: boolean;
   submitting: boolean;
   error?: string | null;
   actions: { label: string; variant?: 'default' | 'outline'; onSubmit: (data: OrderFormSubmit) => void }[];
@@ -54,7 +60,7 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
   const { data: warehouses } = useWarehouses();
   const { data: me } = useMe();
   const canSeeCost = !!me?.permissions.includes('catalog.cost.read');
-  const [value, setValue] = useState<OrderFormValue>({ customer: null, warehouseId: '', withInvoice: false, requestedDate: '', notes: '', lines: [], ...initial });
+  const [value, setValue] = useState<OrderFormValue>({ customer: null, warehouseId: '', withInvoice: false, requestedDate: '', validDays: '15', notes: '', lines: [], ...initial });
   // Monotributo (Factura C): el precio de lista es el final y no se habla de IVA.
   const vat = useInvoicingStatus().data?.taxCondition === 'RESPONSABLE_INSCRIPTO';
   const set = (patch: Partial<OrderFormValue>) => setValue((v) => ({ ...v, ...patch }));
@@ -92,12 +98,14 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
       warehouseId: warehouse.id,
       branchId: warehouse.branchId,
       withInvoice: value.withInvoice,
-      requestedDate: optText(value.requestedDate),
+      ...(quote ? { validDays: validDays! } : { requestedDate: optText(value.requestedDate) }),
       notes: optText(value.notes),
       lines: parsed.lines,
     });
   };
-  const blocked = !value.customer || !parsed.ok || !parsed.lines.length || submitting || (result?.warnings.some((w) => w.includes('no tiene precio')) ?? false);
+  const validDays = optNumber(value.validDays);
+  const badValidity = !!quote && (validDays === undefined || !Number.isInteger(validDays) || validDays < 1 || validDays > 90);
+  const blocked = badValidity || !value.customer || !parsed.ok || !parsed.lines.length || submitting || (result?.warnings.some((w) => w.includes('no tiene precio')) ?? false);
 
   return (
     <div className="space-y-4">
@@ -124,9 +132,15 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
               {warehouses?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </Select>
           </Field>
-          <Field label="Entrega pedida" htmlFor="requestedDate">
-            <Input id="requestedDate" type="date" value={value.requestedDate} onChange={(e) => set({ requestedDate: e.target.value })} />
-          </Field>
+          {quote ? (
+            <Field label="Válido por (días)" htmlFor="validDays">
+              <Input id="validDays" inputMode="numeric" value={value.validDays} onChange={(e) => set({ validDays: e.target.value })} />
+            </Field>
+          ) : (
+            <Field label="Entrega pedida" htmlFor="requestedDate">
+              <Input id="requestedDate" type="date" value={value.requestedDate} onChange={(e) => set({ requestedDate: e.target.value })} />
+            </Field>
+          )}
           <Field label="Facturación" htmlFor="withInvoice">
             <Select id="withInvoice" value={value.withInvoice ? 'yes' : 'no'} onChange={(e) => set({ withInvoice: e.target.value === 'yes' })}>
               <option value="yes">{vat ? 'Con factura (+ IVA 21 %)' : 'Con factura'}</option>
@@ -205,8 +219,9 @@ export function OrderForm({ initial, lockCustomer, submitting, error, actions }:
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         <div className="flex-1 space-y-2 text-sm">
           {!parsed.ok && <p className="text-destructive">{parsed.error}</p>}
+          {badValidity && <p className="text-destructive">La validez tiene que ser de 1 a 90 días.</p>}
           {result?.warnings.map((w) => <p key={w} className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2">{w}</p>)}
-          {result?.lines.some((l) => l.quantity > l.available) && (
+          {!quote && result?.lines.some((l) => l.quantity > l.available) && (
             <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
               Hay productos sin stock suficiente: al confirmar se reserva lo que hay y lo que falta se suma a la nota de pedido del proveedor.
             </p>
