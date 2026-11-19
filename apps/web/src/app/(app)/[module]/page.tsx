@@ -50,15 +50,6 @@ const PENDING: Record<string, { title: string; summary: string; features: string
       'Ver qué reglas corrieron y qué hicieron.',
     ],
   },
-  analytics: {
-    title: 'Inteligencia',
-    summary: 'Números del negocio para tomar decisiones.',
-    features: [
-      'Ventas y margen por mes, por producto y por cliente.',
-      'Productos que más rotan y los que no se mueven.',
-      'Clientes que dejaron de comprar.',
-    ],
-  },
 };
 
 export default async function ModulePage({ params }: { params: Promise<{ module: string }> }) {
