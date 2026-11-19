@@ -12,15 +12,6 @@ const PENDING: Record<string, { title: string; summary: string; features: string
       'El copiloto puede leerlos para responder preguntas.',
     ],
   },
-  automation: {
-    title: 'Automatizaciones',
-    summary: 'Reglas que hacen tareas solas cuando pasa algo.',
-    features: [
-      'Avisos de stock bajo o productos por vencer.',
-      'Recordatorio a clientes con deuda vencida o que hace tiempo no compran.',
-      'Ver qué reglas corrieron y qué hicieron.',
-    ],
-  },
 };
 
 export default async function ModulePage({ params }: { params: Promise<{ module: string }> }) {

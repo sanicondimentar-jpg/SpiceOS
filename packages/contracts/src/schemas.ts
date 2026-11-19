@@ -354,3 +354,15 @@ export type UpdateRouteInput = z.infer<typeof updateRouteSchema>;
 
 export const failedStopSchema = z.object({ reason: z.string().trim().min(1).max(300) });
 export type FailedStopInput = z.infer<typeof failedStopSchema>;
+
+/** Automatizaciones: avisos que revisa el sistema, prendidos o apagados, con su umbral (días u horas). */
+const alertSettingSchema = z.object({ enabled: z.boolean(), value: z.number().int().min(1).max(365).optional() });
+export const alertSettingsSchema = z.object({
+  overdueDebt: alertSettingSchema,
+  lowStock: alertSettingSchema,
+  expiring: alertSettingSchema,
+  webOrders: alertSettingSchema,
+  staleQuotes: alertSettingSchema,
+  lapsedCustomers: alertSettingSchema,
+});
+export type AlertSettingsInput = z.infer<typeof alertSettingsSchema>;
