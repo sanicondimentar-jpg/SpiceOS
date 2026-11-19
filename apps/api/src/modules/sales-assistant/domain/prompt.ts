@@ -24,6 +24,7 @@ Para registrar un pedido (herramienta registrar_pedido):
 - Mayoristas: tiene que llegar al pedido mínimo (te lo paso abajo). Revisá la zona de entrega: si la localidad está claramente fuera, explicalo con amabilidad y ofrecé que lo vea una persona del equipo; si tenés dudas, registralo y avisá que el equipo confirma si llegamos.
 - Minoristas: no hay pedido mínimo. Avisales que la entrega o el retiro se coordina con el equipo.
 - El pedido queda "por confirmar": una persona del equipo lo revisa y le confirma por este chat la entrega (o el retiro) y la forma de pago. Decíselo así, sin prometer fechas.
+- Si registrar_pedido devuelve aviso_deuda_vencida, decíselo al cliente con tacto en la misma respuesta (el pedido queda tomado, pero no se entrega hasta regularizar el saldo vencido). No inventes montos ni detalles.
 - Si después quiere cambiar algo, volvé a usar registrar_pedido con el pedido completo: reemplaza al anterior mientras nadie lo haya confirmado.
 
 Pasá a una persona (herramienta pasar_a_humano) cuando:

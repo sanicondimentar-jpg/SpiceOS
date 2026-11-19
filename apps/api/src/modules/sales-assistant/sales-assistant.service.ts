@@ -11,6 +11,7 @@ import { RequestContextStore } from '../../shared/tenancy/request-context';
 import { UnitOfWork } from '../../shared/unit-of-work';
 import { parseVariant } from '../catalog/domain/price-list-pdf';
 import { CrmFacade } from '../crm/crm.facade';
+import { CollectionsService } from '../receivables/collections.service';
 import { InventoryFacade } from '../inventory/inventory.facade';
 import { addsVat } from '../invoicing/fiscal-settings.service';
 import { WhatsappClient } from '../messaging/whatsapp.client';
@@ -135,6 +136,7 @@ export class SalesAssistantService {
     private readonly whatsapp: WhatsappClient,
     private readonly crm: CrmFacade,
     private readonly inventory: InventoryFacade,
+    private readonly collections: CollectionsService,
   ) {}
 
   /** Punto de entrada desde el consumidor de mensajes. Nunca tira: un reintento podría mandar dos veces lo mismo. */
@@ -440,7 +442,7 @@ export class SalesAssistantService {
         await tx.salesOrderLine.deleteMany({ where: { orderId: previous.id } });
         await tx.salesOrder.update({ where: { id: previous.id }, data: { ...data, version: { increment: 1 }, lines: { create: lines } } });
         scope.auditLog({ action: 'order.update', entityType: 'order', entityId: previous.id, after: { number: previous.number, total: draft.total, by: 'asistente' } });
-        return { number: previous.number, replaced: true };
+        return { number: previous.number, replaced: true, overdue: await this.collections.overdueDebt(tx, customerId) };
       }
 
       const id = randomUUID();
@@ -465,7 +467,7 @@ export class SalesAssistantService {
       events.emit(new DomainEvent('order.created', 'order', id, { orderId: id, number, customerId, total: draft.total, channel: 'whatsapp' }));
       scope.track(events);
       scope.auditLog({ action: 'order.create', entityType: 'order', entityId: id, after: { number, total: draft.total, channel: 'whatsapp', by: 'asistente' } });
-      return { number, replaced: false };
+      return { number, replaced: false, overdue: await this.collections.overdueDebt(tx, customerId) };
     });
 
     this.logger.log(`Asistente: pedido ${result.number} ${result.replaced ? 'actualizado' : 'registrado'} (${money(draft.total)})`);
@@ -478,6 +480,10 @@ export class SalesAssistantService {
       descuento: draft.discountTotal > 0 ? `${money(draft.discountTotal)} (10% del combo por primera compra)` : null,
       entrega: retail ? 'a coordinar con el equipo (entrega o retiro)' : 'la confirma el equipo',
       estado: 'por confirmar: una persona del equipo lo revisa y confirma por este chat la entrega y la forma de pago',
+      // Pedido de Nacho: con deuda vencida se toma el pedido, pero se avisa que no se entrega hasta regularizar.
+      ...(result.overdue && {
+        aviso_deuda_vencida: `El cliente tiene un saldo vencido de ${money(result.overdue.amount)}. Decile con amabilidad que el pedido queda registrado, pero que no se puede entregar hasta que regularice ese saldo, y que el equipo le pasa el detalle. No des más datos de la deuda.`,
+      }),
     };
   }
 

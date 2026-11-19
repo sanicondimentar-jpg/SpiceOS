@@ -13,15 +13,6 @@ const PENDING: Record<string, { title: string; summary: string; features: string
     ],
     today: 'El avance de cada pedido se sigue en el tablero de Inicio.',
   },
-  receivables: {
-    title: 'Cobranza',
-    summary: 'Lo que nos deben los clientes y los cobros que recibimos.',
-    features: [
-      'Saldo de cada cliente: pedidos entregados menos lo que ya pagó.',
-      'Registrar cobros (efectivo, transferencia, cheque) con su comprobante, aplicados a uno o varios pedidos.',
-      'Deuda por antigüedad y lista de clientes para llamar.',
-    ],
-  },
   documents: {
     title: 'Documentos',
     summary: 'Archivo de documentos del negocio en un solo lugar.',
