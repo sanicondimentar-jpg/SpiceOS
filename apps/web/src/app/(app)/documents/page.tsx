@@ -47,6 +47,9 @@ export default function DocumentsPage() {
           <p className="text-sm text-muted-foreground">
             Fichas técnicas, certificados, análisis, contratos y listas de proveedores en un solo lugar. Lo que tiene texto (PDF, Word) lo puede leer el copiloto para responder preguntas.
           </p>
+          {me?.permissions.includes('core.settings.manage') && (
+            <Link href="/settings/integrations" className="text-sm text-primary hover:underline">Traer archivos de Google Drive →</Link>
+          )}
         </div>
         {canWrite && !adding && (
           <Button onClick={() => setAdding(true)}>
