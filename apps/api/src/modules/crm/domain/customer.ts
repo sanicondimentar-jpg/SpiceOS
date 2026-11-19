@@ -21,6 +21,8 @@ export interface CustomerProps {
   creditLimit?: number | null;
   phone?: string | null;
   email?: string | null;
+  deliveryDays: string[];
+  deliveryHours?: string | null;
   source?: string | null;
   tags: string[];
   lastOrderAt?: Date | null;
@@ -42,6 +44,8 @@ type Editable = Partial<
     | 'creditLimit'
     | 'phone'
     | 'email'
+    | 'deliveryDays'
+    | 'deliveryHours'
     | 'tags'
   >
 >;
@@ -52,9 +56,12 @@ export class Customer extends AggregateRoot {
     super();
   }
 
-  static create(input: Omit<CustomerProps, 'id' | 'status' | 'version' | 'tags'> & { tags?: string[] }): Customer {
+  static create(
+    input: Omit<CustomerProps, 'id' | 'status' | 'version' | 'tags' | 'deliveryDays'> & { tags?: string[]; deliveryDays?: string[] },
+  ): Customer {
     const customer = new Customer({
       ...input,
+      deliveryDays: input.deliveryDays ?? [],
       id: randomUUID(),
       taxId: normalizeTaxId(input.taxId),
       phone: normalizePhone(input.phone),
@@ -93,6 +100,9 @@ export class Customer extends AggregateRoot {
     if (expectedVersion !== this.props.version) {
       throw new ConflictError('El cliente fue modificado por otra persona; recargá y volvé a intentar');
     }
+    if (changes.phone !== undefined && !normalizePhone(changes.phone) && this.props.phone) {
+      throw new BusinessRuleError('El teléfono es obligatorio: no se puede borrar');
+    }
     const next = {
       ...changes,
       ...(changes.taxId !== undefined && { taxId: normalizeTaxId(changes.taxId) }),
@@ -109,9 +119,24 @@ export class Customer extends AggregateRoot {
     this.record(new DomainEvent('customer.updated', 'customer', this.id, { customerId: this.id, blocked: true, reason }));
   }
 
+  /** Guarda un teléfono que llegó por WhatsApp o un pedido web en una ficha que no tenía. */
+  setPhoneIfMissing(phone: string): boolean {
+    if (this.props.phone) return false;
+    const normalized = normalizePhone(phone);
+    if (!normalized) return false;
+    this.props = { ...this.props, phone: normalized, version: this.props.version + 1 };
+    this.record(new DomainEvent('customer.updated', 'customer', this.id, { customerId: this.id, changes: ['phone'] }));
+    return true;
+  }
+
   assertCanOrder(): void {
     if (this.props.status === 'BLOCKED') throw new BusinessRuleError('El cliente está bloqueado: no puede recibir pedidos');
   }
+}
+
+/** Lo que le falta a la ficha para estar completa: teléfono y dirección son obligatorios. */
+export function missingFields(c: { phone?: string | null; addressCount: number }): ('phone' | 'address')[] {
+  return [...(c.phone ? [] : (['phone'] as const)), ...(c.addressCount ? [] : (['address'] as const))];
 }
 
 export function normalizeTaxId(taxId?: string | null): string | null {

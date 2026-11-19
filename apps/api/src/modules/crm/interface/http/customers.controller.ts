@@ -2,11 +2,11 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from 
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
-  CreateCustomerInput,
+  NewCustomerInput,
   ListQuery,
   PERMISSIONS,
   UpdateCustomerInput,
-  createCustomerSchema,
+  newCustomerSchema,
   listQuerySchema,
   updateCustomerSchema,
 } from '@spiceos/contracts';
@@ -35,8 +35,9 @@ export class CustomersController {
     @Query(new ZodPipe(listQuerySchema)) query: ListQuery,
     @Query('status') status?: string,
     @Query('ownerId') ownerId?: string,
+    @Query('incomplete') incomplete?: string,
   ) {
-    return this.queries.execute(new ListCustomersQuery({ ...query, status, ownerId }));
+    return this.queries.execute(new ListCustomersQuery({ ...query, status, ownerId, incomplete: incomplete === 'true' }));
   }
 
   @Get('inactive')
@@ -53,7 +54,7 @@ export class CustomersController {
 
   @Post()
   @RequirePermissions(PERMISSIONS.crm.customerWrite)
-  create(@Body(new ZodPipe(createCustomerSchema)) body: CreateCustomerInput) {
+  create(@Body(new ZodPipe(newCustomerSchema)) body: NewCustomerInput) {
     return this.commands.execute(new CreateCustomerCommand(body));
   }
 

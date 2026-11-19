@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createCustomerSchema } from '@spiceos/contracts';
+import { newCustomerSchema } from '@spiceos/contracts';
+import { AddressAndDeliveryFields, deliveryInitial, toAddress, toDays } from '@/components/crm/customer-fields';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Field, Select } from '@/components/ui/field';
@@ -18,8 +19,8 @@ export default function NewCustomerPage() {
   const { data: lists } = usePriceLists();
   const create = useCreateCustomer();
   const form = useZodForm(
-    createCustomerSchema,
-    { legalName: '', tradeName: '', taxId: '', taxCondition: '', industry: '', phone: '', email: '', priceListId: '', paymentTermsDays: '0', creditLimit: '' },
+    newCustomerSchema,
+    { legalName: '', tradeName: '', taxId: '', taxCondition: '', industry: '', phone: '', email: '', priceListId: '', paymentTermsDays: '0', creditLimit: '', ...deliveryInitial() },
     (v) => ({
       legalName: v.legalName.trim(),
       tradeName: optText(v.tradeName),
@@ -28,6 +29,9 @@ export default function NewCustomerPage() {
       industry: optText(v.industry),
       phone: optText(v.phone),
       email: optText(v.email),
+      address: toAddress(v),
+      deliveryDays: toDays(v),
+      deliveryHours: optText(v.deliveryHours),
       priceListId: optText(v.priceListId),
       paymentTermsDays: optNumber(v.paymentTermsDays) ?? 0,
       creditLimit: optNumber(v.creditLimit),
@@ -35,7 +39,7 @@ export default function NewCustomerPage() {
       tags: [],
     }),
   );
-  const { bind, errors } = form;
+  const { bind, errors, values, setValues } = form;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +78,8 @@ export default function NewCustomerPage() {
           <Field label="Teléfono o WhatsApp" htmlFor="phone" error={errors.phone} hint="Ej.: 011 15-4444-5555">
             <Input {...bind('phone')} inputMode="tel" />
           </Field>
-          <Field label="Email" htmlFor="email" error={errors.email}><Input {...bind('email')} type="email" /></Field>
+          <Field label="Email (opcional)" htmlFor="email" error={errors.email}><Input {...bind('email')} type="email" /></Field>
+          <AddressAndDeliveryFields bind={bind} errors={errors} values={values} setValues={setValues} />
           <Field label="Lista de precios" htmlFor="priceListId">
             <Select {...bind('priceListId')}>
               <option value="">La lista por defecto</option>

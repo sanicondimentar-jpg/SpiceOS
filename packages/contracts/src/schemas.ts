@@ -2,6 +2,40 @@ import { z } from 'zod';
 
 // Esquemas compartidos entre API (validación) y web (formularios).
 
+/** Días de la semana en que el cliente atiende o recibe pedidos. */
+export const WEEKDAYS = ['LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB', 'DOM'] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+export const WEEKDAY_LABEL: Record<Weekday, string> = {
+  LUN: 'Lunes',
+  MAR: 'Martes',
+  MIE: 'Miércoles',
+  JUE: 'Jueves',
+  VIE: 'Viernes',
+  SAB: 'Sábado',
+  DOM: 'Domingo',
+};
+
+/** Dirección principal del cliente (donde se entrega). */
+export const customerAddressSchema = z.object({
+  street: z.string().trim().min(3, 'Indicá calle y número').max(200),
+  city: z.string().trim().min(2, 'Indicá la localidad').max(100),
+  province: z.string().trim().min(2).max(100).default('Buenos Aires'),
+  postalCode: z.string().trim().max(10).optional(),
+  deliveryNote: z.string().trim().max(300).optional(), // piso, timbre, entre calles
+});
+export type CustomerAddressInput = z.infer<typeof customerAddressSchema>;
+
+const phoneSchema = z
+  .string({ required_error: 'El teléfono es obligatorio' })
+  .trim()
+  .max(30)
+  .refine((v) => v.replace(/\D/g, '').length >= 8, 'Indicá un teléfono válido');
+
+/**
+ * Esquema base del cliente. Teléfono y dirección son opcionales acá porque los clientes que se crean
+ * solos (WhatsApp, pedidos web, planillas) pueden llegar sin esos datos: quedan "para completar".
+ * La carga manual usa `newCustomerSchema`, que los exige.
+ */
 export const createCustomerSchema = z.object({
   legalName: z.string().min(2).max(200),
   tradeName: z.string().max(200).optional(),
@@ -11,8 +45,11 @@ export const createCustomerSchema = z.object({
     .optional(),
   taxCondition: z.enum(['RI', 'MONOTRIBUTO', 'CF', 'EXENTO']).optional(),
   industry: z.string().max(100).optional(),
-  phone: z.string().max(30).optional(),
-  email: z.string().email().optional(),
+  phone: phoneSchema.optional(),
+  email: z.string().email('Email inválido').optional(),
+  address: customerAddressSchema.optional(),
+  deliveryDays: z.array(z.enum(WEEKDAYS)).default([]),
+  deliveryHours: z.string().trim().max(120).optional(),
   ownerId: z.string().uuid().optional(),
   priceListId: z.string().uuid().optional(),
   paymentTermsDays: z.number().int().min(0).max(180).default(0),
@@ -22,10 +59,25 @@ export const createCustomerSchema = z.object({
 });
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 
-export const updateCustomerSchema = createCustomerSchema.partial().extend({
-  version: z.number().int().positive(),
+/** Alta manual desde SpiceOS: teléfono y dirección obligatorios. */
+export const newCustomerSchema = createCustomerSchema.extend({
+  phone: phoneSchema,
+  address: customerAddressSchema,
 });
+export type NewCustomerInput = z.infer<typeof newCustomerSchema>;
+
+/** Edición: el teléfono no se puede borrar; mail y horario sí (null). */
+export const updateCustomerSchema = createCustomerSchema
+  .partial()
+  .extend({
+    email: z.string().email('Email inválido').nullable().optional(),
+    deliveryHours: z.string().trim().max(120).nullable().optional(),
+    version: z.number().int().positive(),
+  });
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+
+/** Datos que le faltan a la ficha para estar completa. */
+export type CustomerMissingField = 'phone' | 'address';
 
 export const listQuerySchema = z.object({
   q: z.string().optional(),

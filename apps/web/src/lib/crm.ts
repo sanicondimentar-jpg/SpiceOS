@@ -1,7 +1,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ContactInput, CreateCustomerInput, ImportResult } from '@spiceos/contracts';
+import type { ContactInput, ImportResult, NewCustomerInput, UpdateCustomerInput } from '@spiceos/contracts';
+import type { InvoiceRow } from './invoicing';
 import { api } from './api';
 
 export interface Contact {
@@ -16,11 +17,28 @@ export interface Contact {
 export const useCreateCustomer = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateCustomerInput) =>
+    mutationFn: (input: NewCustomerInput) =>
       api<{ id: string; code: string }>('/crm/customers', { method: 'POST', body: JSON.stringify(input) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['customers'] }),
   });
 };
+
+/** Edita la ficha: datos de contacto, dirección principal y días/horario de recepción. */
+export const useUpdateCustomer = (customerId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateCustomerInput) =>
+      api<{ version: number }>(`/crm/customers/${customerId}`, { method: 'PATCH', body: JSON.stringify(input) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['customer360', customerId] });
+      void qc.invalidateQueries({ queryKey: ['customers'] });
+    },
+  });
+};
+
+/** Facturas y notas de crédito del cliente, para cruzarlas con sus pedidos. */
+export const useCustomerInvoices = (customerId: string) =>
+  useQuery({ queryKey: ['invoices', 'customer', customerId], queryFn: () => api<InvoiceRow[]>(`/invoicing/customers/${customerId}`) });
 
 export const useContacts = (customerId: string) =>
   useQuery({ queryKey: ['contacts', customerId], queryFn: () => api<Contact[]>(`/crm/customers/${customerId}/contacts`) });

@@ -91,6 +91,12 @@ export class InvoicingController {
     return this.invoicing.forOrder(orderId);
   }
 
+  @Get('customers/:customerId')
+  @RequirePermissions(PERMISSIONS.orders.read)
+  forCustomer(@Param('customerId', ParseUUIDPipe) customerId: string) {
+    return this.invoicing.forCustomer(customerId);
+  }
+
   @Post('orders/:orderId')
   @RequirePermissions(PERMISSIONS.invoicing.issue)
   issue(@Param('orderId', ParseUUIDPipe) orderId: string) {

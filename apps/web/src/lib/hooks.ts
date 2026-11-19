@@ -37,6 +37,12 @@ export interface CustomerRow {
   phone: string | null;
   lastOrderAt: string | null;
   riskScore: number | null;
+  source: string | null;
+  /** Pedidos hechos (sin borradores ni cancelados) y cuántos de esos se facturaron. */
+  orders: number;
+  invoicedOrders: number;
+  /** Lo que le falta a la ficha: teléfono y dirección son obligatorios. */
+  missing: ('phone' | 'address')[];
 }
 
 export interface CopilotReply {
@@ -57,12 +63,12 @@ export const useRevenueByMonth = () =>
     queryFn: () => api<{ month: string; revenue: number; margin: number }[]>('/analytics/revenue-by-month?months=12'),
   });
 
-export const useCustomers = (q: string, page: number) =>
+export const useCustomers = (q: string, page: number, incomplete = false) =>
   useQuery({
-    queryKey: ['customers', q, page],
+    queryKey: ['customers', q, page, incomplete],
     queryFn: () =>
-      api<{ items: CustomerRow[]; total: number; page: number; pageSize: number }>(
-        `/crm/customers?q=${encodeURIComponent(q)}&page=${page}&pageSize=25`,
+      api<{ items: CustomerRow[]; total: number; incompleteTotal: number; page: number; pageSize: number }>(
+        `/crm/customers?q=${encodeURIComponent(q)}&page=${page}&pageSize=25${incomplete ? '&incomplete=true' : ''}`,
       ),
     placeholderData: (prev) => prev,
   });

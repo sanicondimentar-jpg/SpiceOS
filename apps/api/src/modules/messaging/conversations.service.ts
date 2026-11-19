@@ -185,6 +185,8 @@ export class ConversationsService {
           ...(input.status && { status: input.status, ...(input.status === 'CLOSED' && { unreadCount: 0 }) }),
         },
       });
+      // Al vincular el chat a un cliente, el número queda en su ficha.
+      if (input.customerId && input.customerId !== c.customerId) await this.crm.attachPhone(tx, scope, input.customerId, c.waContactId, c.contactName);
       scope.auditLog({ action: 'conversation.update', entityType: 'conversation', entityId: id, before: { customerId: c.customerId, status: c.status }, after: input });
       return { id };
     });
