@@ -339,3 +339,18 @@ export const automationRuleSchema = z.object({
   isActive: z.boolean().default(true),
 });
 export type AutomationRuleInput = z.infer<typeof automationRuleSchema>;
+
+/** Logística: hoja de ruta de un día con los pedidos a entregar, en el orden de la lista. */
+export const createRouteSchema = z.object({
+  date: z.string().date(),
+  driverName: z.string().max(120).optional(),
+  orderIds: z.array(z.string().uuid()).min(1).max(100),
+});
+export type CreateRouteInput = z.infer<typeof createRouteSchema>;
+
+/** Mientras no salió: cambiar fecha, repartidor, o qué pedidos lleva y en qué orden. */
+export const updateRouteSchema = createRouteSchema.partial();
+export type UpdateRouteInput = z.infer<typeof updateRouteSchema>;
+
+export const failedStopSchema = z.object({ reason: z.string().trim().min(1).max(300) });
+export type FailedStopInput = z.infer<typeof failedStopSchema>;

@@ -3,16 +3,6 @@ import { Card, CardContent } from '@/components/ui/card';
 
 // Módulos del menú que todavía no tienen pantalla: qué van a hacer y qué se puede usar hoy.
 const PENDING: Record<string, { title: string; summary: string; features: string[]; today?: string }> = {
-  logistics: {
-    title: 'Logística',
-    summary: 'Organización de los repartos de los pedidos listos para entregar.',
-    features: [
-      'Hoja de ruta del día agrupando pedidos por zona.',
-      'Quién reparte, en qué vehículo y en qué orden.',
-      'Marcar entregado desde el celular, con observaciones.',
-    ],
-    today: 'El avance de cada pedido se sigue en el tablero de Inicio.',
-  },
   documents: {
     title: 'Documentos',
     summary: 'Archivo de documentos del negocio en un solo lugar.',
