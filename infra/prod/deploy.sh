@@ -79,6 +79,13 @@ mkdir -p backups
 
 dc() { docker compose "$@"; }
 
+# Cada deploy deja las imágenes de la versión anterior: sin limpiar, el disco se llena y el pull falla
+# ("no space left on device", pasó el 19/11). Se borran las que no usa ningún contenedor (las que corren quedan).
+log "Liberando espacio (imágenes viejas)"
+docker image prune -af >/dev/null || true
+docker builder prune -af >/dev/null 2>&1 || true
+df -h / | tail -1
+
 log "Descargando imágenes $IMAGE_TAG"
 dc --profile tools pull --quiet
 
@@ -172,7 +179,7 @@ chmod 644 /etc/cron.d/spiceos-watchdog
 # Si la versión no cambió, compose no reinicia la API; si quedó colgada (pasó el 5/11), se reinicia una vez.
 if healthy 30 || { log "La API no responde: reiniciando api, worker y scheduler"; dc restart api worker scheduler; healthy 18; }; then
   log "Listo: https://$APP_DOMAIN"
-  docker image prune -f >/dev/null
+  docker image prune -af >/dev/null || true
   exit 0
 fi
 echo "La API no respondió en https://$APP_DOMAIN/api/v1/health."
