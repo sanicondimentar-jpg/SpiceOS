@@ -14,6 +14,7 @@ export const CUSTOMER_COLUMNS: Record<string, string[]> = {
   street: ['dirección', 'direccion', 'domicilio', 'calle', 'dirección de entrega', 'direccion de entrega'],
   city: ['localidad', 'ciudad', 'partido', 'barrio'],
   province: ['provincia'],
+  postalCode: ['código postal', 'codigo postal', 'cp', 'c.p.', 'cod postal'],
   deliveryDays: ['días de entrega', 'dias de entrega', 'días de recepción', 'dias de recepcion', 'días de atención', 'dias de atencion', 'días', 'dias'],
   deliveryHours: ['horario', 'horario de entrega', 'horario de recepción', 'horario de recepcion', 'horario de atención', 'horario de atencion'],
   paymentTermsDays: ['plazo', 'plazo de pago', 'días de pago', 'dias de pago', 'condición de pago', 'condicion de pago'],
@@ -26,7 +27,7 @@ export const CUSTOMER_COLUMNS: Record<string, string[]> = {
 };
 
 export const CUSTOMER_TEMPLATE_HEADERS = [
-  'Razón social', 'Nombre de fantasía', 'CUIT', 'Condición IVA', 'Rubro', 'Teléfono', 'Dirección', 'Localidad', 'Provincia',
+  'Razón social', 'Nombre de fantasía', 'CUIT', 'Condición IVA', 'Rubro', 'Teléfono', 'Dirección', 'Localidad', 'Código postal', 'Provincia',
   'Días de entrega', 'Horario', 'Email',
   'Plazo de pago', 'Límite de crédito', 'Lista de precios', 'Vendedor', 'Contacto', 'Cargo', 'Etiquetas',
 ];
@@ -114,7 +115,7 @@ export function mapCustomerRow({ row, values }: SheetRow, lookups: CustomerLooku
     industry: values.industry,
     phone: values.phone,
     email: values.email?.toLowerCase(),
-    address: values.street || values.city ? { street: values.street ?? '', city: values.city ?? '', province: values.province || undefined } : undefined,
+    address: values.street || values.city ? { street: values.street ?? '', city: values.city ?? '', province: values.province || undefined, postalCode: values.postalCode || undefined } : undefined,
     deliveryDays,
     deliveryHours: values.deliveryHours,
     ownerId,

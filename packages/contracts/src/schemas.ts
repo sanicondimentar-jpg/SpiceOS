@@ -20,7 +20,13 @@ export const customerAddressSchema = z.object({
   street: z.string().trim().min(3, 'Indicá calle y número').max(200),
   city: z.string().trim().min(2, 'Indicá la localidad').max(100),
   province: z.string().trim().min(2).max(100).default('Buenos Aires'),
-  postalCode: z.string().trim().max(10).optional(),
+  /** Opcional. 4 dígitos (1640) o CPA de 8 caracteres (B1640ABC). */
+  postalCode: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^([A-Z]\d{4}[A-Z]{3}|\d{4})$/, 'Código postal inválido (ej.: 1640 o B1640ABC)')
+    .optional(),
   deliveryNote: z.string().trim().max(300).optional(), // piso, timbre, entre calles
 });
 export type CustomerAddressInput = z.infer<typeof customerAddressSchema>;

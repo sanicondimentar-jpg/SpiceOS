@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { updateCustomerSchema } from '@spiceos/contracts';
+import { customerAddressSchema, updateCustomerSchema } from '@spiceos/contracts';
 import { Clock, Mail, MapPin, Pencil, Phone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,7 +18,7 @@ export interface CustomerDetails {
   email: string | null;
   deliveryDays: string[];
   deliveryHours: string | null;
-  addresses: { street: string; city: string; province: string; deliveryNote: string | null }[];
+  addresses: { street: string; city: string; province: string; postalCode: string | null; deliveryNote: string | null }[];
 }
 
 /** Teléfono, dirección, mail y días/horario de recepción. Teléfono y dirección son obligatorios. */
@@ -28,7 +28,7 @@ export function CustomerDetailsCard({ customer: c, missing, canWrite }: { custom
   const initial = { phone: c.phone ?? '', email: c.email ?? '', ...deliveryInitial(c) };
   const form = useZodForm(
     // Al editar, teléfono y dirección también son obligatorios.
-    updateCustomerSchema.required({ phone: true, address: true }),
+    updateCustomerSchema.required({ phone: true }).extend({ address: customerAddressSchema }),
     initial,
     (v) => ({
       version: c.version,
@@ -72,7 +72,7 @@ export function CustomerDetailsCard({ customer: c, missing, canWrite }: { custom
             <Row
               icon={<MapPin className="h-4 w-4" />}
               label="Dirección"
-              value={a ? [a.street, a.city, a.province].filter(Boolean).join(', ') + (a.deliveryNote ? ` (${a.deliveryNote})` : '') : null}
+              value={a ? [a.street, a.postalCode ? `${a.postalCode} ${a.city}` : a.city, a.province].filter(Boolean).join(', ') + (a.deliveryNote ? ` (${a.deliveryNote})` : '') : null}
               required
             />
             <Row icon={<Mail className="h-4 w-4" />} label="Email" value={c.email} />
