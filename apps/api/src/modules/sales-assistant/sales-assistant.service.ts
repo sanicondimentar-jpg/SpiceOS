@@ -32,6 +32,10 @@ import {
   money,
   priceDraft,
   toTurns,
+  isWebOrderMessage,
+  webOrderNote,
+  webOrderNumber,
+  type WebOrderSummary,
 } from './domain/assistant';
 import { ASSISTANT_SYSTEM, businessText, COVERAGE } from './domain/prompt';
 
@@ -43,6 +47,8 @@ const HISTORY = 40;
 const DEBOUNCE_MS = 7_000;
 /** Para audios: cuánto se espera la transcripción. */
 const TRANSCRIPT_WAIT_MS = 30_000;
+/** Pedido web sin número: cuánto se espera a que el sistema lo termine de cargar para pasarle el número al cliente. */
+const WEB_ORDER_WAIT_MS = 20_000;
 
 /** Cómo ve el cliente cada estado del pedido. */
 const STATUS_FOR_CUSTOMER: Record<string, string> = {
@@ -180,7 +186,7 @@ export class SalesAssistantService {
     }
     if (!(await this.shouldAnswer(conversationId, messageId, type))) return; // pudo responder una persona mientras tanto
 
-    await this.reply(conversationId);
+    await this.reply(conversationId, messageId);
   }
 
   private async shouldAnswer(conversationId: string, messageId: string, type: string): Promise<boolean> {
@@ -244,8 +250,9 @@ export class SalesAssistantService {
   }
 
   /** Un turno del asistente: arma el contexto, corre el bucle con las herramientas y manda la respuesta. */
-  private async reply(conversationId: string) {
+  private async reply(conversationId: string, messageId: string) {
     const ctx = RequestContextStore.get();
+    const webOrder = await this.webOrderFor(conversationId, messageId);
     const conversation = (await this.loadConversation(conversationId))!;
     const [catalog, recommended, topSellers, history] = await Promise.all([
       this.uow.read((tx) => this.loadCatalog(tx)),
@@ -275,6 +282,7 @@ export class SalesAssistantService {
         type: 'text',
         text: [businessText({ minOrder: state.minOrder, coverage: COVERAGE, notes: conversation.account.assistantNotes, now: new Date() }), this.customerText(conversation)].join('\n\n'),
       },
+      ...(webOrder ? [{ type: 'text' as const, text: webOrderNote(webOrder.order, state.minOrder) }] : []),
     ];
     const messages: Anthropic.MessageParam[] = turns.map((t) => ({ role: t.role, content: t.content }));
 
@@ -330,6 +338,59 @@ export class SalesAssistantService {
       // Sin respuesta automática: que lo vea una persona.
       await this.handoff(conversationId, `El asistente tuvo un error y no respondió (${(e as Error).message.slice(0, 120)})`);
       throw e;
+    }
+  }
+
+  /**
+   * Si el mensaje es un pedido armado en la web, busca el pedido que registró el sistema (por el número, o el que
+   * cargó a partir de este mensaje si vino sin número) y lo vincula a este chat: así el asistente lo confirma enseguida,
+   * lo ve con ver_pedidos_del_cliente y, si el cliente cambia algo, lo reemplaza en vez de duplicarlo.
+   * Devuelve null si el mensaje no es un pedido web; { order: null } si es uno pero no se encontró el pedido.
+   */
+  private async webOrderFor(conversationId: string, messageId: string): Promise<{ order: WebOrderSummary | null } | null> {
+    const message = await this.uow.read((tx) => tx.message.findUnique({ where: { id: messageId }, select: { body: true } }));
+    const text = message?.body ?? null;
+    if (!isWebOrderMessage(text)) return null;
+    const number = webOrderNumber(text);
+    const where = number
+      ? { number }
+      : { statusHistory: { some: { reason: `Recibido por WhatsApp sin número de pedido (mensaje ${messageId})` } } };
+    const until = Date.now() + (number ? 0 : WEB_ORDER_WAIT_MS);
+    for (;;) {
+      const order = await this.uow.read((tx) =>
+        tx.salesOrder.findFirst({
+          where,
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            total: true,
+            customerId: true,
+            conversationId: true,
+            notes: true,
+            customer: { select: { addresses: { take: 1, select: { id: true } } } },
+            lines: { select: { quantity: true, lineTotal: true, variant: { select: { name: true, product: { select: { name: true } } } } } },
+          },
+        }),
+      );
+      if (order) {
+        await this.uow.run(async (tx) => {
+          if (!order.conversationId) await tx.salesOrder.update({ where: { id: order.id }, data: { conversationId } });
+          if (order.customerId) await tx.conversation.updateMany({ where: { id: conversationId, customerId: null }, data: { customerId: order.customerId } });
+        });
+        return {
+          order: {
+            number: order.number,
+            status: STATUS_FOR_CUSTOMER[order.status] ?? order.status,
+            retail: /Pedido web \(minorista\)/i.test(order.notes ?? '') || /^Modo:\s*Minorista/im.test(text ?? ''),
+            total: Number(order.total),
+            lines: order.lines.map((l) => `${Number(l.quantity)} × ${l.variant.product.name} ${l.variant.name} = ${money(Number(l.lineTotal))}`),
+            hasAddress: !!order.customer?.addresses.length,
+          },
+        };
+      }
+      if (Date.now() >= until) return { order: null };
+      await sleep(2_000);
     }
   }
 

@@ -1,4 +1,4 @@
-import { catalogText, comboText, decide, topSellersText, isWebOrderMessage, priceDraft, toTurns, type CatalogItem, type DecisionInput } from './assistant';
+import { catalogText, comboText, decide, topSellersText, isWebOrderMessage, webOrderNote, webOrderNumber, priceDraft, toTurns, type CatalogItem, type DecisionInput } from './assistant';
 
 const now = new Date('2026-11-19T15:00:00Z');
 const base: DecisionInput = {
@@ -42,8 +42,9 @@ describe('cuándo contesta el asistente', () => {
 
   it('no contesta reacciones, pedidos armados en la web ni pasado el tope del día', () => {
     expect(decide({ ...base, messageType: 'reaction' }).answer).toBe(false);
-    expect(decide({ ...base, text: '*Pedido — Sabor a Casa*\nModo: Mayorista' }).answer).toBe(false);
-    expect(decide({ ...base, text: '*Pedido PED-00000012 — Sabor a Casa*' }).answer).toBe(false);
+    // Los pedidos armados en la web se contestan en el momento (pedido de Nacho: que no espere a un "hola").
+    expect(decide({ ...base, text: '*Pedido — Sabor a Casa*\nModo: Mayorista' }).answer).toBe(true);
+    expect(decide({ ...base, text: '*Pedido PED-00000012 — Sabor a Casa*' }).answer).toBe(true);
     expect(decide({ ...base, repliesLast24h: 40 }).answer).toBe(false);
   });
 
@@ -51,6 +52,19 @@ describe('cuándo contesta el asistente', () => {
     expect(isWebOrderMessage('Pedido — Sabor a Casa')).toBe(true);
     expect(isWebOrderMessage('Quiero hacer un pedido a Sabor a Casa')).toBe(false);
     expect(isWebOrderMessage(null)).toBe(false);
+    expect(webOrderNumber('*Pedido PED-00000012 — Sabor a Casa*\nModo: Minorista')).toBe('PED-00000012');
+    expect(webOrderNumber('*Pedido — Sabor a Casa*')).toBeNull();
+  });
+
+  it('arma la respuesta inmediata a un pedido web', () => {
+    const order = { number: 'PED-00000012', status: 'recibido, por confirmar', retail: false, total: 30_000, lines: ['1 × Pimentón 1 kg = $ 30.000'], hasAddress: false };
+    const note = webOrderNote(order, 50_000);
+    expect(note).toContain('PED-00000012');
+    expect(note).toContain('NO uses registrar_pedido');
+    expect(note).toContain('pedido mínimo');
+    expect(note).toContain('dirección');
+    expect(webOrderNote({ ...order, retail: true, hasAddress: true }, 50_000)).not.toContain('pedido mínimo');
+    expect(webOrderNote(null, 50_000)).toContain('todavía no tenemos el número');
   });
 });
 
