@@ -1572,6 +1572,9 @@ model DocumentVersion {
   documentId    String   @map("document_id") @db.Uuid
   versionNo     Int      @map("version_no")
   storageKey    String?  @map("storage_key") // MinIO
+  content       Bytes?   // archivo subido desde SpiceOS (sin MinIO en producción)
+  fileName      String?  @map("file_name")
+  sizeBytes     Int?     @map("size_bytes")
   driveRevisionId String? @map("drive_revision_id")
   mimeType      String   @map("mime_type")
   checksum      String

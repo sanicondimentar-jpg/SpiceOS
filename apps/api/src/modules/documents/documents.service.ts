@@ -18,12 +18,16 @@ export interface NewVersionInput {
   kind: DocumentKind;
   mimeType: string;
   content: Buffer;
+  /** Guarda el archivo en la base (subidas desde SpiceOS). Lo de Drive queda en Drive. */
+  keepContent?: boolean;
+  fileName?: string;
   extractedText: string | null;
   storageKey?: string;
   driveRevisionId?: string;
   entityType?: string;
   entityId?: string;
   validUntil?: Date;
+  tags?: string[];
 }
 
 /** Versionado documental: cada cambio de contenido crea una versión nueva; la anterior queda en el historial. */
@@ -46,6 +50,7 @@ export class DocumentsService {
           entityType: input.entityType,
           entityId: input.entityId,
           validUntil: input.validUntil,
+          tags: input.tags ?? [],
         },
         update: { title: input.title },
         include: { versions: { orderBy: { versionNo: 'desc' }, take: 1 } },
@@ -60,6 +65,9 @@ export class DocumentsService {
           documentId,
           versionNo,
           storageKey: input.storageKey,
+          content: input.keepContent ? input.content : undefined,
+          fileName: input.fileName,
+          sizeBytes: input.content.length,
           driveRevisionId: input.driveRevisionId,
           mimeType: input.mimeType,
           checksum,

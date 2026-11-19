@@ -11,6 +11,7 @@ const KEY = 'automation.alerts';
 const money = (n: number) => `$${Math.round(n).toLocaleString('es-AR')}`;
 const qty = (n: number) => n.toLocaleString('es-AR', { maximumFractionDigits: 3 });
 const day = (d: Date) => `${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
+const fullDay = (d: Date) => `${day(d)}/${d.getUTCFullYear()}`;
 
 /**
  * Avisos del día: el sistema revisa deuda vencida, stock bajo, lotes por vencer, pedidos web sin revisar,
@@ -54,6 +55,7 @@ export class AlertsService {
       webOrders: perms.has(PERMISSIONS.orders.read),
       staleQuotes: perms.has(PERMISSIONS.sales.quoteRead),
       lapsedCustomers: perms.has(PERMISSIONS.crm.customerRead) && perms.has(PERMISSIONS.analytics.executive),
+      expiringDocs: perms.has(PERMISSIONS.documents.read),
     };
     const on = (k: AlertKind) => settings[k].enabled && allowed[k];
     const out: Alert[] = [];
@@ -158,6 +160,25 @@ export class AlertsService {
             title: `Presupuesto sin respuesta: ${q.customer}`,
             detail: `${q.number} · ${money(q.total)} · vence ${q.days_left === 0 ? 'hoy' : `en ${q.days_left} días`}`,
             link: `/sales/quotes/${q.id}`,
+          });
+        }
+      }
+
+      if (on('expiringDocs')) {
+        const days = settings.expiringDocs.value!;
+        const rows = await tx.$queryRaw<{ id: string; title: string; valid_until: Date; days_left: number }[]>`
+          SELECT d.id, d.title, d.valid_until, (d.valid_until - current_date)::int AS days_left
+          FROM documents d
+          WHERE d.deleted_at IS NULL AND d.valid_until IS NOT NULL AND d.valid_until <= current_date + ${days}::int
+          ORDER BY d.valid_until
+          LIMIT 20`;
+        for (const d of rows) {
+          out.push({
+            kind: 'expiringDocs',
+            severity: d.days_left < 0 ? 'high' : d.days_left <= 7 ? 'medium' : 'low',
+            title: d.days_left < 0 ? `Documento vencido: ${d.title}` : `Documento por vencer: ${d.title}`,
+            detail: d.days_left < 0 ? `Venció el ${fullDay(d.valid_until)}` : `Vence el ${fullDay(d.valid_until)} (${d.days_left === 0 ? 'hoy' : `en ${d.days_left} días`})`,
+            link: `/documents/${d.id}`,
           });
         }
       }
