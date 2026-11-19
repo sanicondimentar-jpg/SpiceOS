@@ -802,6 +802,7 @@ model SalesOrder {
   contactPhone  String?     @map("contact_phone")
   webTotal      Decimal?    @map("web_total") @db.Decimal(18, 4)
   createdCustomer Boolean   @default(false) @map("created_customer") // el cliente se creó con este pedido
+  conversationId  String?   @map("conversation_id") @db.Uuid // chat de WhatsApp donde lo armó el asistente
   version       Int         @default(1)
   confirmedAt   DateTime?   @map("confirmed_at") @db.Timestamptz
   createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz
@@ -818,6 +819,7 @@ model SalesOrder {
   @@unique([tenantId, number])
   @@index([tenantId, customerId, createdAt])
   @@index([tenantId, status])
+  @@index([tenantId, conversationId])
   @@map("sales_orders")
 }
 
@@ -1470,6 +1472,11 @@ model WhatsappAccount {
   encryptedAppSecret Bytes?  @map("encrypted_app_secret") // firma X-Hub-Signature-256
   verifiedName       String? @map("verified_name") // nombre del negocio según Meta
   connectedAt        DateTime? @map("connected_at") @db.Timestamptz
+  // Asistente de ventas con IA: OFF (apagado), TEST (solo los teléfonos de prueba), ON (todos los clientes).
+  assistantMode       String   @default("OFF") @map("assistant_mode")
+  assistantTestPhones String[] @default([]) @map("assistant_test_phones")
+  assistantMinOrder   Decimal  @default(50000) @map("assistant_min_order") @db.Decimal(18, 2)
+  assistantNotes      String?  @map("assistant_notes") // datos extra para el asistente: entregas, pagos, horarios
 
   conversations Conversation[]
 
@@ -1491,6 +1498,10 @@ model Conversation {
   summary      String?
   sentiment    String?
   unreadCount  Int       @default(0) @map("unread_count")
+  // Asistente de ventas: en pausa hasta (una persona respondió) o derivado a una persona (motivo).
+  assistantPausedUntil DateTime? @map("assistant_paused_until") @db.Timestamptz
+  assistantHandoff     String?   @map("assistant_handoff")
+  assistantHandoffAt   DateTime? @map("assistant_handoff_at") @db.Timestamptz
 
   account  WhatsappAccount @relation(fields: [accountId], references: [id])
   customer Customer?       @relation(fields: [customerId], references: [id])

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Archive, ArchiveRestore, Check, CheckCheck, Clock, Link2, Search, Send, UserPlus, X } from 'lucide-react';
+import { ArrowLeft, Archive, ArchiveRestore, Bot, Check, CheckCheck, Clock, Link2, Pause, Play, Search, Send, UserPlus, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,6 +14,7 @@ import { useCustomers, useMe } from '@/lib/hooks';
 import {
   TYPE_LABEL,
   useConversation,
+  useConversationAssistant,
   useConversations,
   useCreateCustomerFromChat,
   useMarkRead,
@@ -110,6 +111,7 @@ function ConversationItem({ c, active, onClick }: { c: ConversationRow; active: 
         </span>
         {!!c.unreadCount && <span className="ml-auto shrink-0 rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground">{c.unreadCount}</span>}
       </div>
+      {c.needsHuman && <span className="text-[11px] font-medium text-destructive">El asistente lo pasó a una persona</span>}
       {!c.customer && <span className="text-[11px] text-warning">Sin cliente vinculado</span>}
     </button>
   );
@@ -132,6 +134,7 @@ function Chat({ id, onBack }: { id: string; onBack: () => void }) {
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
         <ChatHeader c={c} onBack={onBack} canSend={canSend} />
+        <AssistantBar c={c} canSend={canSend} />
         <details className="border-b bg-card lg:hidden">
           <summary className="cursor-pointer px-4 py-2 text-xs font-medium text-muted-foreground">
             {c.customer ? `Cliente y pedidos de ${c.customer.name}` : 'Vincular a un cliente'}
@@ -180,6 +183,37 @@ function ChatHeader({ c, onBack, canSend }: { c: ConversationDetail; onBack: () 
         >
           {closed ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
           {closed ? 'Desarchivar' : 'Archivar'}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** Estado del asistente de ventas en este chat, con el botón para pausarlo o devolvérselo. */
+function AssistantBar({ c, canSend }: { c: ConversationDetail; canSend: boolean }) {
+  const toggle = useConversationAssistant(c.id);
+  const a = c.assistant;
+  if (a.state === 'off') return null;
+  const text =
+    a.state === 'active'
+      ? 'El asistente está atendiendo este chat.'
+      : a.state === 'paused'
+        ? `El asistente está en pausa porque respondió una persona${a.pausedUntil ? ` (vuelve ${when(a.pausedUntil)})` : ''}.`
+        : `El asistente no atiende este chat: ${a.reason}.`;
+  return (
+    <div className={cn('flex items-center gap-2 border-b px-3 py-1.5 text-xs', a.state === 'handoff' ? 'bg-warning/10' : 'bg-primary/5')}>
+      <Bot className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1">{text}</span>
+      {canSend && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 shrink-0"
+          disabled={toggle.isPending}
+          onClick={() => toggle.mutate(a.state === 'active' ? 'pause' : 'resume')}
+        >
+          {a.state === 'active' ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+          {a.state === 'active' ? 'Pausar' : 'Devolver al asistente'}
         </Button>
       )}
     </div>

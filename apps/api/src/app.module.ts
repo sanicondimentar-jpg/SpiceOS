@@ -26,6 +26,7 @@ import { ImportsModule } from './modules/imports/imports.module';
 import { PurchasingModule } from './modules/purchasing/purchasing.module';
 import { InvoicingModule } from './modules/invoicing/invoicing.module';
 import { ReceiptsModule } from './modules/receipts/receipts.module';
+import { SalesAssistantModule } from './modules/sales-assistant/sales-assistant.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { ReceiptsModule } from './modules/receipts/receipts.module';
     PurchasingModule,
     InvoicingModule,
     ReceiptsModule,
+    SalesAssistantModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

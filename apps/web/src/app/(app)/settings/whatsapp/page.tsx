@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AssistantSettingsCard } from '@/components/messaging/assistant-settings';
 import { useSaveWhatsappAccount, useWhatsappAccount } from '@/lib/messaging';
 import { date } from '@/lib/utils';
 
@@ -115,6 +116,8 @@ export default function WhatsappSettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      {a && <AssistantSettingsCard />}
     </div>
   );
 }

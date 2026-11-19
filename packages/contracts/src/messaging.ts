@@ -28,3 +28,20 @@ export const updateConversationSchema = z.object({
   status: z.enum(['OPEN', 'CLOSED']).optional(),
 });
 export type UpdateConversationInput = z.infer<typeof updateConversationSchema>;
+
+/** Asistente de ventas por WhatsApp (IA). */
+export const assistantSettingsSchema = z.object({
+  /** OFF: apagado. TEST: solo contesta a los teléfonos de prueba. ON: contesta a todos los clientes. */
+  mode: z.enum(['OFF', 'TEST', 'ON']),
+  testPhones: z
+    .array(z.string().trim().regex(/^[\d\s+()-]{10,25}$/, 'Teléfono con característica, ej. 11 7058-0234'))
+    .max(10)
+    .default([]),
+  minOrder: z.coerce.number().min(0).max(100_000_000),
+  /** Lo que el asistente puede contar: días de entrega, formas de pago, horarios. */
+  notes: z.string().trim().max(3000).nullable().optional(),
+});
+export type AssistantSettingsInput = z.infer<typeof assistantSettingsSchema>;
+
+export const conversationAssistantSchema = z.object({ action: z.enum(['pause', 'resume']) });
+export type ConversationAssistantInput = z.infer<typeof conversationAssistantSchema>;

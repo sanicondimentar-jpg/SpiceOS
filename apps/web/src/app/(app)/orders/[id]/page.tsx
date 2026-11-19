@@ -290,7 +290,11 @@ function WebReview({ order }: { order: OrderDetail }) {
   return (
     <Card className="border-warning/50 bg-warning/5 print:hidden">
       <CardContent className="space-y-2 p-4 text-sm">
-        <p className="font-medium">Pedido recibido desde la web: revisalo antes de aprobarlo.</p>
+        <p className="font-medium">
+          {order.channel === 'whatsapp'
+            ? 'Pedido armado por el asistente de WhatsApp: revisalo (productos, zona y stock) antes de aprobarlo y avisale al cliente por el chat.'
+            : 'Pedido recibido desde la web: revisalo antes de aprobarlo.'}
+        </p>
         <p>
           Lo hizo <span className="font-medium">{order.contactName}</span>
           {phone && (
@@ -302,7 +306,7 @@ function WebReview({ order }: { order: OrderDetail }) {
         </p>
         {order.webTotal != null && diff !== 0 && (
           <p>
-            En la web vio un total de {money(order.webTotal)} sin IVA; con los precios actuales da {money(order.total)} ({diff > 0 ? '+' : '−'}
+            {order.channel === 'whatsapp' ? 'En el chat se le pasó' : 'En la web vio'} un total de {money(order.webTotal)} sin IVA; con los precios actuales da {money(order.total)} ({diff > 0 ? '+' : '−'}
             {money(Math.abs(diff))}).
           </p>
         )}
