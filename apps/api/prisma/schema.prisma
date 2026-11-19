@@ -1011,6 +1011,8 @@ model Supplier {
   products        SupplierProduct[]
   purchaseOrders  PurchaseOrder[]
   pendingReceipts PendingReceipt[]
+  purchases       SupplierPurchase[]
+  payments        SupplierPayment[]
 
   @@unique([tenantId, code])
   @@map("suppliers")
@@ -1093,6 +1095,67 @@ model GoodsReceipt {
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
 
   @@map("goods_receipts")
+}
+
+/// Compra a un proveedor: lo que se le debe. Se crea sola al registrar un ingreso de mercadería
+/// con proveedor, o a mano (mercadería que ya estaba cargada, fletes, etc.).
+model SupplierPurchase {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  supplierId       String    @map("supplier_id") @db.Uuid
+  date             DateTime  @db.Date
+  reference        String? // remito o factura del proveedor
+  total            Decimal   @db.Decimal(18, 4)
+  notes            String?
+  source           String    @default("MANUAL") // RECEIPT (ingreso de mercadería), MANUAL
+  pendingReceiptId String?   @map("pending_receipt_id") @db.Uuid // remito leído con IA (tiene la foto)
+  createdBy        String?   @map("created_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  cancelledAt      DateTime? @map("cancelled_at") @db.Timestamptz
+
+  supplier    Supplier                    @relation(fields: [supplierId], references: [id])
+  allocations SupplierPaymentAllocation[]
+
+  @@index([tenantId, supplierId, date])
+  @@map("supplier_purchases")
+}
+
+/// Pago a un proveedor con su comprobante (foto o PDF). Un pago puede cubrir varias compras.
+model SupplierPayment {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  supplierId  String    @map("supplier_id") @db.Uuid
+  date        DateTime  @db.Date
+  method      String // TRANSFER, CASH, MERCADOPAGO, CHEQUE, ECHEQ, OTHER
+  amount      Decimal   @db.Decimal(18, 4)
+  reference   String? // número de operación
+  notes       String?
+  proof       Bytes?
+  proofType   String?   @map("proof_type")
+  proofName   String?   @map("proof_name")
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz
+
+  supplier    Supplier                    @relation(fields: [supplierId], references: [id])
+  allocations SupplierPaymentAllocation[]
+
+  @@index([tenantId, supplierId, date])
+  @@map("supplier_payments")
+}
+
+model SupplierPaymentAllocation {
+  tenantId   String  @map("tenant_id") @db.Uuid
+  paymentId  String  @map("payment_id") @db.Uuid
+  purchaseId String  @map("purchase_id") @db.Uuid
+  amount     Decimal @db.Decimal(18, 4)
+
+  payment  SupplierPayment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  purchase SupplierPurchase @relation(fields: [purchaseId], references: [id])
+
+  @@id([paymentId, purchaseId])
+  @@index([purchaseId])
+  @@map("supplier_payment_allocations")
 }
 
 // -----------------------------------------------------------------------------

@@ -19,7 +19,8 @@ export default function PurchasesPage() {
     <div className="mx-auto max-w-7xl space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Notas de pedido a proveedores</h1>
-        <Button asChild variant="outline" size="sm" className="ml-auto"><Link href="/purchases/suppliers">Proveedores</Link></Button>
+        <Button asChild size="sm" className="ml-auto"><Link href="/purchases/payments">Pagos a proveedores</Link></Button>
+        <Button asChild variant="outline" size="sm"><Link href="/purchases/suppliers">Proveedores</Link></Button>
       </div>
       <p className="text-sm text-muted-foreground">
         Se arman solas: al confirmar un pedido sin stock suficiente, lo que falta se suma a la nota en borrador del proveedor de cada producto.

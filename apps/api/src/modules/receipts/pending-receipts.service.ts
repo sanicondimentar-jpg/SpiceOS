@@ -119,7 +119,15 @@ export class PendingReceiptsService {
     );
     if (!claimed.count) throw new ConflictError('Ese remito ya no está por confirmar');
     try {
-      const result = await this.inventory.receive({ ...input, supplierId: input.supplierId ?? row.supplierId ?? undefined });
+      const result = await this.inventory.receive(
+        {
+          ...input,
+          supplierId: input.supplierId ?? row.supplierId ?? undefined,
+          documentDate: input.documentDate ?? (row.documentDate ? row.documentDate.toISOString().slice(0, 10) : undefined),
+        },
+        'Ingreso de mercadería',
+        { pendingReceiptId: id },
+      );
       return { id, ...result };
     } catch (e) {
       await this.uow.run((tx) => tx.pendingReceipt.updateMany({ where: { id }, data: { status: 'PENDING', resolvedBy: null, resolvedAt: null } }));
