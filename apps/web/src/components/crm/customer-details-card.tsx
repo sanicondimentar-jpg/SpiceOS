@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { fullAddressSchema, updateCustomerSchema } from '@spiceos/contracts';
+import { customerAddressSchema, updateCustomerSchema } from '@spiceos/contracts';
 import { Clock, Mail, MapPin, Pencil, Phone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,7 +28,7 @@ export function CustomerDetailsCard({ customer: c, missing, canWrite }: { custom
   const initial = { phone: c.phone ?? '', email: c.email ?? '', ...deliveryInitial(c) };
   const form = useZodForm(
     // Al editar, teléfono y dirección también son obligatorios.
-    updateCustomerSchema.required({ phone: true }).extend({ address: fullAddressSchema }),
+    updateCustomerSchema.required({ phone: true }).extend({ address: customerAddressSchema }),
     initial,
     (v) => ({
       version: c.version,

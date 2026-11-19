@@ -79,7 +79,7 @@ export function AddressAndDeliveryFields({
       <Field label="Provincia" htmlFor="province" error={errors['address.province']}>
         <Input {...bind('province')} />
       </Field>
-      <Field label="Código postal" htmlFor="postalCode" error={errors['address.postalCode']} hint="Ej.: 1640 o B1640ABC">
+      <Field label="Código postal (opcional)" htmlFor="postalCode" error={errors['address.postalCode']} hint="Ej.: 1640 o B1640ABC">
         <Input {...bind('postalCode')} autoComplete="postal-code" className="uppercase" />
       </Field>
       <Field label="Indicaciones para la entrega" htmlFor="deliveryNote" hint="Opcional: piso, timbre, entre calles">
