@@ -20,7 +20,13 @@ export const customerAddressSchema = z.object({
   street: z.string().trim().min(3, 'Indicá calle y número').max(200),
   city: z.string().trim().min(2, 'Indicá la localidad').max(100),
   province: z.string().trim().min(2).max(100).default('Buenos Aires'),
-  postalCode: z.string().trim().max(10).optional(),
+  /** 4 dígitos (1640) o CPA de 8 caracteres (B1640ABC). */
+  postalCode: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^([A-Z]\d{4}[A-Z]{3}|\d{4})$/, 'Código postal inválido (ej.: 1640 o B1640ABC)')
+    .optional(),
   deliveryNote: z.string().trim().max(300).optional(), // piso, timbre, entre calles
 });
 export type CustomerAddressInput = z.infer<typeof customerAddressSchema>;
@@ -60,9 +66,14 @@ export const createCustomerSchema = z.object({
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 
 /** Alta manual desde SpiceOS: teléfono y dirección obligatorios. */
+/** En la carga manual la dirección va completa, con código postal. */
+export const fullAddressSchema = customerAddressSchema.extend({
+  postalCode: z.string({ required_error: 'Indicá el código postal' }).pipe(customerAddressSchema.shape.postalCode.unwrap()),
+});
+
 export const newCustomerSchema = createCustomerSchema.extend({
   phone: phoneSchema,
-  address: customerAddressSchema,
+  address: fullAddressSchema,
 });
 export type NewCustomerInput = z.infer<typeof newCustomerSchema>;
 

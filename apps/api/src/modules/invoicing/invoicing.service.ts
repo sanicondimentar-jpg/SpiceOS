@@ -111,7 +111,7 @@ export class InvoicingService {
         doc,
         condition,
         receiverName: order.customer.legalName,
-        receiverAddress: address ? [address.street, address.city, address.province].filter(Boolean).join(', ') : null,
+        receiverAddress: address ? [address.street, address.postalCode ? `${address.postalCode} ${address.city}` : address.city, address.province].filter(Boolean).join(', ') : null,
         amounts,
         lines,
       });

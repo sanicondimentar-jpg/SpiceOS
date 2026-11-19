@@ -11,7 +11,7 @@ type Bind = (name: string) => Record<string, unknown> & { id: string };
 
 /** Valores iniciales del formulario a partir de la ficha (o vacíos para un cliente nuevo). */
 export function deliveryInitial(c?: {
-  addresses?: { street: string; city: string; province: string; deliveryNote: string | null }[];
+  addresses?: { street: string; city: string; province: string; postalCode: string | null; deliveryNote: string | null }[];
   deliveryDays?: string[];
   deliveryHours?: string | null;
 }): Values {
@@ -20,6 +20,7 @@ export function deliveryInitial(c?: {
     street: a?.street ?? '',
     city: a?.city ?? '',
     province: a?.province ?? 'Buenos Aires',
+    postalCode: a?.postalCode ?? '',
     deliveryNote: a?.deliveryNote ?? '',
     deliveryDays: (c?.deliveryDays ?? []).join(','),
     deliveryHours: c?.deliveryHours ?? '',
@@ -30,6 +31,7 @@ export const toAddress = (v: Values) => ({
   street: v.street?.trim() ?? '',
   city: v.city?.trim() ?? '',
   province: optText(v.province) ?? 'Buenos Aires',
+  postalCode: optText(v.postalCode),
   deliveryNote: optText(v.deliveryNote),
 });
 
@@ -76,6 +78,9 @@ export function AddressAndDeliveryFields({
       </Field>
       <Field label="Provincia" htmlFor="province" error={errors['address.province']}>
         <Input {...bind('province')} />
+      </Field>
+      <Field label="Código postal" htmlFor="postalCode" error={errors['address.postalCode']} hint="Ej.: 1640 o B1640ABC">
+        <Input {...bind('postalCode')} autoComplete="postal-code" className="uppercase" />
       </Field>
       <Field label="Indicaciones para la entrega" htmlFor="deliveryNote" hint="Opcional: piso, timbre, entre calles">
         <Input {...bind('deliveryNote')} />

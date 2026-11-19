@@ -94,15 +94,20 @@ describe('dirección y días de entrega en la planilla de clientes', () => {
 
   it('toma dirección, localidad y horario', () => {
     const r = mapCustomerRow(
-      { row: 2, values: { legalName: 'Almacén Don José', street: 'Av. Santa Fe 1234', city: 'Martínez', deliveryDays: 'lunes a viernes', deliveryHours: '8 a 12' } },
+      { row: 2, values: { legalName: 'Almacén Don José', street: 'Av. Santa Fe 1234', city: 'Martínez', postalCode: 'b1640abc', deliveryDays: 'lunes a viernes', deliveryHours: '8 a 12' } },
       lookups,
     );
     expect(r.errors).toEqual([]);
     expect(r.input).toMatchObject({
-      address: { street: 'Av. Santa Fe 1234', city: 'Martínez', province: 'Buenos Aires' },
+      address: { street: 'Av. Santa Fe 1234', city: 'Martínez', province: 'Buenos Aires', postalCode: 'B1640ABC' },
       deliveryDays: ['LUN', 'MAR', 'MIE', 'JUE', 'VIE'],
       deliveryHours: '8 a 12',
     });
+  });
+
+  it('rechaza un código postal mal escrito', () => {
+    const r = mapCustomerRow({ row: 4, values: { legalName: 'X SA', street: 'Calle 1 123', city: 'Tigre', postalCode: '16400' } }, lookups);
+    expect(r.errors.map((e) => e.field)).toEqual(['postalCode']);
   });
 
   it('pide la localidad si vino la calle sola', () => {
