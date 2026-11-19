@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { MessageCircle, Receipt } from 'lucide-react';
+import { KeyRound, MessageCircle, Receipt } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
 export default function SettingsPage() {
@@ -24,6 +24,17 @@ export default function SettingsPage() {
             <div>
               <div className="font-medium">WhatsApp</div>
               <div className="text-sm text-muted-foreground">Conectar el número de la empresa para recibir y responder mensajes desde el sistema.</div>
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
+      <Link href="/settings/api-keys" className="block">
+        <Card className="hover:bg-accent">
+          <CardContent className="flex items-center gap-3 p-5">
+            <KeyRound className="h-5 w-5 text-primary" />
+            <div>
+              <div className="font-medium">Claves de acceso</div>
+              <div className="text-sm text-muted-foreground">Para que Claude cargue remitos de compra desde el chat. Quedan por confirmar, no suman stock solos.</div>
             </div>
           </CardContent>
         </Card>

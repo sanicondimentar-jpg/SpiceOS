@@ -1,9 +1,10 @@
 'use client';
 
+import type { ReceiptReading } from '@spiceos/contracts';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { Camera, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,7 +13,9 @@ import { Input } from '@/components/ui/input';
 import { useProducts } from '@/lib/catalog';
 import { optNumber, optText } from '@/lib/form';
 import { useMe } from '@/lib/hooks';
+import { fetchBlob } from '@/lib/api';
 import { useReceiveStock, useWarehouses } from '@/lib/inventory';
+import { SOURCE_LABEL, useConfirmPendingReceipt, useDiscardPendingReceipt, usePendingReceipt, usePendingReceipts, useReadReceipt } from '@/lib/receipts';
 import { money } from '@/lib/utils';
 
 interface Line {
@@ -26,21 +29,78 @@ interface Line {
   unitCost: string;
 }
 
-/** Ingreso de mercadería con lote y vencimiento por renglón. */
+/** Ingreso de mercadería con lote y vencimiento por renglón; se puede completar leyendo la foto del remito. */
 export default function ReceivePage() {
+  return (
+    <Suspense>
+      <ReceiveForm />
+    </Suspense>
+  );
+}
+
+type ReadingInfo = Omit<ReceiptReading, 'lines'> & { lines: number; from: string };
+
+function ReceiveForm() {
   const router = useRouter();
+  const pendingId = useSearchParams().get('pending');
   const { data: warehouses } = useWarehouses();
   const { data: me } = useMe();
   const canSeeCost = !!me?.permissions.includes('catalog.cost.read');
   const receive = useReceiveStock();
+  const readReceipt = useReadReceipt();
+  const pending = usePendingReceipt(pendingId);
+  const confirm = useConfirmPendingReceipt(pendingId ?? '');
+  const discard = useDiscardPendingReceipt(pendingId ?? '');
+  const { data: pendingList } = usePendingReceipts(!pendingId);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [warehouseId, setWarehouseId] = useState('');
   const [reference, setReference] = useState('');
   const [updateCost, setUpdateCost] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
+  const [info, setInfo] = useState<ReadingInfo | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const applied = useRef<string | null>(null);
   useEffect(() => {
     if (!warehouseId && warehouses?.length) setWarehouseId(warehouses[0].id);
   }, [warehouses, warehouseId]);
+
+  const applyReading = (r: ReceiptReading, from: string) => {
+    if (r.reference) setReference(r.reference);
+    setLines((prev) => {
+      const read = r.lines.map((l) => ({
+        variantId: l.variantId,
+        sku: l.sku,
+        description: l.description,
+        cost: l.currentCost,
+        quantity: String(l.quantity),
+        lotCode: '',
+        expiresAt: '',
+        unitCost: l.unitCost != null ? String(l.unitCost) : '',
+      }));
+      return [...prev.filter((p) => !read.some((x) => x.variantId === p.variantId)), ...read];
+    });
+    setInfo({ ...r, lines: r.lines.length, from });
+  };
+
+  // Remito por confirmar (WhatsApp o Claude): se carga una sola vez en el formulario, con su foto al lado.
+  useEffect(() => {
+    if (!pending.data || applied.current === pending.data.id) return;
+    applied.current = pending.data.id;
+    const d = pending.data;
+    applyReading(d.reading, `${SOURCE_LABEL[d.source]}${d.supplier ? ` · ${d.supplier.name}` : ''}${d.sender ? ` · ${d.sender}` : ''}`);
+    if (d.hasImage) {
+      fetchBlob(`/receipts/pending/${d.id}/image`).then((b) => setPreview(URL.createObjectURL(b))).catch(() => undefined);
+    }
+  }, [pending.data]);
+
+  const onFile = (file: File | undefined) => {
+    if (!file) return;
+    setError(null);
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview(file.type.startsWith('image/') ? URL.createObjectURL(file) : null);
+    readReceipt.mutate(file, { onSuccess: (r) => applyReading(r, 'Foto del remito'), onError: (e) => setError(e.message) });
+  };
 
   const update = (i: number, patch: Partial<Line>) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const submit = () => {
@@ -53,93 +113,179 @@ export default function ReceivePage() {
       if (unitCost !== undefined && (Number.isNaN(unitCost) || unitCost < 0)) return setError(`Costo inválido en ${l.sku}`);
       out.push({ variantId: l.variantId, quantity, lotCode: optText(l.lotCode), expiresAt: optText(l.expiresAt), unitCost });
     }
-    receive.mutate(
-      { warehouseId, reference: optText(reference), updateCost, lines: out },
-      { onSuccess: () => router.push('/inventory'), onError: (e) => setError(e.message) },
-    );
+    const input = { warehouseId, reference: optText(reference), updateCost, lines: out };
+    const done = { onSuccess: () => router.push('/inventory'), onError: (e: Error) => setError(e.message) };
+    if (pendingId) confirm.mutate(input, done);
+    else receive.mutate(input, done);
   };
+  const saving = receive.isPending || confirm.isPending;
+  const resolved = pending.data && pending.data.status !== 'PENDING';
+  const linesTotal = lines.reduce((sum, l) => sum + (optNumber(l.quantity) ?? 0) * (optNumber(l.unitCost) ?? 0), 0);
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-semibold">Ingreso de mercadería</h1>
+        <h1 className="text-2xl font-semibold">{pendingId ? 'Confirmar remito' : 'Ingreso de mercadería'}</h1>
         <Link href="/inventory" className="ml-auto text-sm text-muted-foreground hover:underline">Volver a inventario</Link>
       </div>
-      <Card>
-        <CardContent className="grid gap-4 p-5 sm:grid-cols-3">
-          <Field label="Depósito" htmlFor="warehouse">
-            <Select id="warehouse" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-              {warehouses?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </Select>
-          </Field>
-          <Field label="Remito o factura del proveedor" htmlFor="reference">
-            <Input id="reference" value={reference} placeholder="0001-00012345" onChange={(e) => setReference(e.target.value)} />
-          </Field>
-          {canSeeCost && (
-            <label className="flex items-end gap-2 pb-2 text-sm">
-              <input type="checkbox" checked={updateCost} onChange={(e) => setUpdateCost(e.target.checked)} />
-              Actualizar el costo de los productos con el de este ingreso
-            </label>
-          )}
-        </CardContent>
-      </Card>
 
-      <Card className="overflow-x-auto">
-        <div className="flex flex-wrap items-center gap-3 p-4">
-          <h2 className="font-semibold">Productos recibidos</h2>
-          <VariantSearch onPick={(v) => !lines.some((l) => l.variantId === v.variantId) && setLines([...lines, { ...v, quantity: '', lotCode: '', expiresAt: '', unitCost: '' }])} />
-        </div>
-        <table className="w-full min-w-[820px] text-sm">
-          <thead className="border-y text-left text-xs text-muted-foreground">
-            <tr>
-              <th className="px-4 py-2 font-medium">Producto</th>
-              <th className="px-4 py-2 text-right font-medium">Cantidad</th>
-              <th className="px-4 py-2 font-medium">Lote</th>
-              <th className="px-4 py-2 font-medium">Vencimiento</th>
-              {canSeeCost && <th className="px-4 py-2 text-right font-medium">Costo unitario</th>}
-              <th className="px-2 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {lines.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Agregá los productos del remito.</td></tr>}
-            {lines.map((l, i) => (
-              <tr key={l.variantId} className="border-b last:border-0">
-                <td className="px-4 py-2">
-                  <div>{l.description}</div>
-                  <div className="font-mono text-xs text-muted-foreground">{l.sku}</div>
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <Input aria-label={`Cantidad de ${l.sku}`} className="ml-auto h-8 w-24 text-right" inputMode="decimal" value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value })} />
-                </td>
-                <td className="px-4 py-2">
-                  <Input aria-label={`Lote de ${l.sku}`} className="h-8 w-36" placeholder="opcional" value={l.lotCode} onChange={(e) => update(i, { lotCode: e.target.value })} />
-                </td>
-                <td className="px-4 py-2">
-                  <Input aria-label={`Vencimiento de ${l.sku}`} className="h-8 w-40" type="date" value={l.expiresAt} onChange={(e) => update(i, { expiresAt: e.target.value })} />
-                </td>
-                {canSeeCost && (
-                  <td className="px-4 py-2 text-right">
-                    <Input
-                      aria-label={`Costo de ${l.sku}`}
-                      className="ml-auto h-8 w-28 text-right"
-                      inputMode="decimal"
-                      placeholder={l.cost != null ? money(l.cost) : ''}
-                      value={l.unitCost}
-                      onChange={(e) => update(i, { unitCost: e.target.value })}
-                    />
-                  </td>
+      {!pendingId && !!pendingList?.length && (
+        <Card className="border-warning/50">
+          <CardContent className="space-y-2 p-4">
+            <h2 className="font-semibold">Remitos por confirmar ({pendingList.length})</h2>
+            <p className="text-sm text-muted-foreground">Llegaron por WhatsApp de un proveedor autorizado o los cargó Claude. No suman stock hasta que los revises.</p>
+            <ul className="divide-y text-sm">
+              {pendingList.map((p) => (
+                <li key={p.id} className="flex flex-wrap items-center gap-2 py-2">
+                  <Badge tone="warn">{SOURCE_LABEL[p.source]}</Badge>
+                  <span className="font-medium">{p.supplier?.name ?? p.sender ?? 'Sin proveedor'}</span>
+                  <span className="text-muted-foreground">{p.reference ?? 'Sin número'} · {p.lines} productos{p.unmatched ? ` · ${p.unmatched} sin reconocer` : ''}</span>
+                  <span className="text-xs text-muted-foreground">{new Date(p.createdAt).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                  <Link href={`/inventory/receive?pending=${p.id}`} className="ml-auto"><Button size="sm" variant="outline">Revisar</Button></Link>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {pendingId && pending.isLoading && <p className="text-sm text-muted-foreground">Cargando remito…</p>}
+      {resolved && (
+        <p className="rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">
+          Este remito ya fue {pending.data!.status === 'CONFIRMED' ? 'confirmado' : 'descartado'}. <Link href="/inventory/receive" className="underline">Cargar otro ingreso</Link>
+        </p>
+      )}
+
+      <div className={preview ? 'grid gap-4 lg:grid-cols-[1fr_320px]' : 'space-y-4'}>
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="grid gap-4 p-5 sm:grid-cols-3">
+              <Field label="Depósito" htmlFor="warehouse">
+                <Select id="warehouse" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+                  {warehouses?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </Select>
+              </Field>
+              <Field label="Remito o factura del proveedor" htmlFor="reference">
+                <Input id="reference" value={reference} placeholder="0001-00012345" onChange={(e) => setReference(e.target.value)} />
+              </Field>
+              {canSeeCost && (
+                <label className="flex items-end gap-2 pb-2 text-sm">
+                  <input type="checkbox" checked={updateCost} onChange={(e) => setUpdateCost(e.target.checked)} />
+                  Actualizar el costo de los productos con el de este ingreso
+                </label>
+              )}
+              {!pendingId && (
+                <div className="flex flex-wrap items-center gap-3 sm:col-span-3">
+                  <input ref={fileInput} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
+                  <Button variant="outline" disabled={readReceipt.isPending} onClick={() => fileInput.current?.click()}>
+                    <Camera className="mr-2 h-4 w-4" />
+                    {readReceipt.isPending ? 'Leyendo el remito…' : 'Leer remito con foto'}
+                  </Button>
+                  <span className="text-sm text-muted-foreground">Sacale una foto o subí el PDF: completa productos, cantidades y costos para que los revises.</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {info && (
+            <Card>
+              <CardContent className="space-y-1 p-4 text-sm">
+                <p>
+                  <span className="font-medium">{info.from}:</span> {info.lines} productos reconocidos
+                  {info.documentDate && <> · fecha {info.documentDate.split('-').reverse().join('/')}</>}
+                  {info.discountPct != null && <> · descuento {info.discountPct}% (ya aplicado al costo)</>}
+                </p>
+                {canSeeCost && info.total != null && (
+                  <p className={Math.abs(info.total - linesTotal) > Math.max(1, info.total * 0.005) ? 'text-warning' : 'text-muted-foreground'}>
+                    Total del remito {money(info.total)} · suma de los renglones {money(linesTotal)}
+                  </p>
                 )}
-                <td className="px-2 py-2">
-                  <Button variant="ghost" size="icon" aria-label={`Quitar ${l.sku}`} onClick={() => setLines(lines.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+                {!!info.unmatched.length && (
+                  <div className="text-warning">
+                    No reconocí estos renglones; agregalos a mano con el buscador:
+                    <ul className="ml-5 list-disc">
+                      {info.unmatched.map((u, i) => <li key={i}>{u.sourceText}{u.quantity != null && ` × ${u.quantity}`}</li>)}
+                    </ul>
+                  </div>
+                )}
+                <p className="text-muted-foreground">Revisá todo antes de registrar: el stock recién se suma al confirmar.</p>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card className="overflow-x-auto">
+            <div className="flex flex-wrap items-center gap-3 p-4">
+              <h2 className="font-semibold">Productos recibidos</h2>
+              <VariantSearch onPick={(v) => !lines.some((l) => l.variantId === v.variantId) && setLines([...lines, { ...v, quantity: '', lotCode: '', expiresAt: '', unitCost: '' }])} />
+            </div>
+            <table className="w-full min-w-[820px] text-sm">
+              <thead className="border-y text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Producto</th>
+                  <th className="px-4 py-2 text-right font-medium">Cantidad</th>
+                  <th className="px-4 py-2 font-medium">Lote</th>
+                  <th className="px-4 py-2 font-medium">Vencimiento</th>
+                  {canSeeCost && <th className="px-4 py-2 text-right font-medium">Costo unitario</th>}
+                  <th className="px-2 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {lines.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Agregá los productos del remito.</td></tr>}
+                {lines.map((l, i) => (
+                  <tr key={l.variantId} className="border-b last:border-0">
+                    <td className="px-4 py-2">
+                      <div>{l.description}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{l.sku}</div>
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <Input aria-label={`Cantidad de ${l.sku}`} className="ml-auto h-8 w-24 text-right" inputMode="decimal" value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value })} />
+                    </td>
+                    <td className="px-4 py-2">
+                      <Input aria-label={`Lote de ${l.sku}`} className="h-8 w-36" placeholder="opcional" value={l.lotCode} onChange={(e) => update(i, { lotCode: e.target.value })} />
+                    </td>
+                    <td className="px-4 py-2">
+                      <Input aria-label={`Vencimiento de ${l.sku}`} className="h-8 w-40" type="date" value={l.expiresAt} onChange={(e) => update(i, { expiresAt: e.target.value })} />
+                    </td>
+                    {canSeeCost && (
+                      <td className="px-4 py-2 text-right">
+                        <Input
+                          aria-label={`Costo de ${l.sku}`}
+                          className="ml-auto h-8 w-28 text-right"
+                          inputMode="decimal"
+                          placeholder={l.cost != null ? money(l.cost) : ''}
+                          value={l.unitCost}
+                          onChange={(e) => update(i, { unitCost: e.target.value })}
+                        />
+                      </td>
+                    )}
+                    <td className="px-2 py-2">
+                      <Button variant="ghost" size="icon" aria-label={`Quitar ${l.sku}`} onClick={() => setLines(lines.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </div>
+        {preview && (
+          <Card className="h-fit overflow-hidden lg:sticky lg:top-4">
+            <a href={preview} target="_blank" rel="noreferrer" title="Abrir la foto en grande">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={preview} alt="Foto del remito" className="w-full" />
+            </a>
+          </Card>
+        )}
+      </div>
       <div className="flex flex-wrap items-center justify-end gap-3">
         {error && <p className="mr-auto text-sm text-destructive">{error}</p>}
-        <Button disabled={!lines.length || !warehouseId || receive.isPending} onClick={submit}>{receive.isPending ? 'Guardando…' : `Registrar ingreso (${lines.length})`}</Button>
+        {pendingId && !resolved && (
+          <Button variant="outline" disabled={discard.isPending || saving} onClick={() => discard.mutate(undefined, { onSuccess: () => router.push('/inventory/receive'), onError: (e) => setError(e.message) })}>
+            Descartar remito
+          </Button>
+        )}
+        <Button disabled={!lines.length || !warehouseId || saving || !!resolved} onClick={submit}>
+          {saving ? 'Guardando…' : `${pendingId ? 'Confirmar ingreso' : 'Registrar ingreso'} (${lines.length})`}
+        </Button>
       </div>
     </div>
   );

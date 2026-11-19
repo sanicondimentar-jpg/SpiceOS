@@ -25,13 +25,14 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { PurchasingModule } from './modules/purchasing/purchasing.module';
 import { InvoicingModule } from './modules/invoicing/invoicing.module';
+import { ReceiptsModule } from './modules/receipts/receipts.module';
 
 @Module({
   imports: [
     LoggerModule.forRoot({
       pinoHttp: {
         level: process.env.LOG_LEVEL ?? 'info',
-        redact: ['req.headers.authorization', 'req.headers.cookie'],
+        redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-api-key"]'],
         transport: process.env.NODE_ENV === 'development' ? { target: 'pino-pretty' } : undefined,
       },
     }),
@@ -56,6 +57,7 @@ import { InvoicingModule } from './modules/invoicing/invoicing.module';
     ImportsModule,
     PurchasingModule,
     InvoicingModule,
+    ReceiptsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

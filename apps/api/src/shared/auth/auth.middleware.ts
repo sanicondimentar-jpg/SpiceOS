@@ -1,7 +1,7 @@
 import { Injectable, Logger, NestMiddleware, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { PermissionKey } from '@spiceos/contracts';
 import { env } from '../config/env';
 import { SystemPrismaService } from '../prisma/prisma.service';
@@ -20,6 +20,8 @@ interface CachedIdentity {
 }
 
 const CACHE_TTL_MS = 60_000;
+/** Única ruta que acepta clave de acceso (ver ReceiptsController.create). */
+const API_KEY_ROUTE = '/api/v1/receipts/pending';
 
 /**
  * Verifica el JWT de Keycloak, resuelve empresa + membresía y ejecuta el resto
@@ -36,6 +38,8 @@ export class AuthMiddleware implements NestMiddleware {
   constructor(private readonly db: SystemPrismaService) {}
 
   async use(req: Request, _res: Response, next: NextFunction) {
+    const apiKey = req.headers['x-api-key'];
+    if (typeof apiKey === 'string' && apiKey) return this.useApiKey(req, apiKey, next);
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) return next(); // el guard decide si el endpoint es público
 
@@ -60,6 +64,34 @@ export class AuthMiddleware implements NestMiddleware {
     const identity = await this.resolve(token.sub!, orgId);
     const ctx: RequestContext = {
       ...identity,
+      correlationId: (req.headers['x-correlation-id'] as string) ?? randomUUID(),
+      ip: req.ip,
+    };
+    RequestContextStore.run(ctx, () => next());
+  }
+
+  /**
+   * Clave de acceso de una integración (Claude): solo puede dejar remitos por confirmar.
+   * Cualquier otra ruta se rechaza acá, antes de llegar a los controladores.
+   */
+  private async useApiKey(req: Request, key: string, next: NextFunction) {
+    const path = (req.originalUrl ?? req.url).split('?')[0].replace(/\/+$/, '');
+    if (req.method !== 'POST' || path !== API_KEY_ROUTE) throw new ForbiddenException('La clave de acceso solo sirve para cargar remitos');
+    const hash = createHash('sha256').update(key).digest('hex');
+    const row = await this.db.apiKey.findUnique({ where: { keyHash: hash } });
+    if (!row || row.revokedAt) throw new UnauthorizedException('Clave de acceso inválida o revocada');
+    const company = await this.db.company.findFirst({ where: { id: row.tenantId, status: 'ACTIVE' }, select: { id: true } });
+    if (!company) throw new ForbiddenException('La empresa no está activa');
+    await this.db.apiKey.update({ where: { id: row.id }, data: { lastUsedAt: new Date() } });
+    const ctx: RequestContext = {
+      tenantId: row.tenantId,
+      userId: row.createdBy,
+      actor: `apikey:${row.name}`,
+      actorType: 'INTEGRATION',
+      roleKey: 'integration',
+      permissions: new Set(),
+      branchScope: [],
+      maxDiscount: 0,
       correlationId: (req.headers['x-correlation-id'] as string) ?? randomUUID(),
       ip: req.ip,
     };
