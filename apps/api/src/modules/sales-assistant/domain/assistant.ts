@@ -89,6 +89,17 @@ export function catalogText(items: CatalogItem[]): string {
   ].join('\n');
 }
 
+// ───────────────────────────── Más vendidos ─────────────────────────────
+
+/** Mientras haya pocas ventas registradas, los básicos que más rotan (los del combo). */
+export const DEFAULT_TOP_SELLERS = ['Pimienta Negra Molida', 'Pimentón', 'Orégano en Hojas', 'Ají Molido'];
+
+/** Los productos que más rotan, para ofrecerlos primero y después sumar variedad con el resto. */
+export function topSellersText(fromSales: string[]): string {
+  const names = fromSales.length >= 4 ? fromSales : [...new Set([...fromSales, ...DEFAULT_TOP_SELLERS])];
+  return `Productos que más rotan (ofrecelos primero): ${names.join(', ')}.`;
+}
+
 // ───────────────────────────── Combo minorista ─────────────────────────────
 
 /** Combo básico para minoristas (definido con Nacho): sobres sueltos de 25 g; el precio sale del catálogo. */

@@ -1,4 +1,4 @@
-import { catalogText, comboInfo, comboText, decide, isWebOrderMessage, priceDraft, toTurns, type CatalogItem, type DecisionInput } from './assistant';
+import { catalogText, comboInfo, comboText, decide, topSellersText, isWebOrderMessage, priceDraft, toTurns, type CatalogItem, type DecisionInput } from './assistant';
 
 const now = new Date('2026-11-19T15:00:00Z');
 const base: DecisionInput = {
@@ -139,5 +139,12 @@ describe('historial del chat para el modelo', () => {
       { role: 'assistant', content: '¡Hola! Sí, tenemos.\n[Respondió una persona del equipo] Te paso precio' },
       { role: 'user', content: '[mandó una foto, que no podés ver]' },
     ]);
+  });
+});
+
+describe('productos que más rotan', () => {
+  it('usa las ventas y completa con los básicos mientras haya pocas', () => {
+    expect(topSellersText(['Comino Molido'])).toBe('Productos que más rotan (ofrecelos primero): Comino Molido, Pimienta Negra Molida, Pimentón, Orégano en Hojas, Ají Molido.');
+    expect(topSellersText(['A', 'B', 'C', 'D'])).toBe('Productos que más rotan (ofrecelos primero): A, B, C, D.');
   });
 });
