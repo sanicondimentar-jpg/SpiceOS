@@ -38,6 +38,10 @@ import {
   type WebOrderSummary,
 } from './domain/assistant';
 import { ASSISTANT_SYSTEM, businessText, COVERAGE } from './domain/prompt';
+import { findStaffByPhone } from '../../shared/staff/staff-phone';
+import { AiOrdersService } from '../staff-assistant/ai-orders.service';
+import { instructionsForSales } from '../staff-assistant/domain/staff';
+import { StaffAssistantService } from '../staff-assistant/staff-assistant.service';
 
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 const MAX_ITERATIONS = 6;
@@ -156,6 +160,7 @@ export class SalesAssistantService {
     private readonly crm: CrmFacade,
     private readonly inventory: InventoryFacade,
     private readonly collections: CollectionsService,
+    private readonly staffAssistant: StaffAssistantService,
   ) {}
 
   /** Punto de entrada desde el consumidor de mensajes. Nunca tira: un reintento podría mandar dos veces lo mismo. */
@@ -170,6 +175,9 @@ export class SalesAssistantService {
   }
 
   private async handle(conversationId: string, messageId: string, type: string) {
+    // Si escribe un usuario del sistema (dueño, gerente) desde su celular vinculado, no se le vende: lo atiende el asistente interno.
+    const staff = await this.staffFor(conversationId);
+    if (staff) return this.staffAssistant.handle(conversationId, messageId, type, staff);
     if (!(await this.shouldAnswer(conversationId, messageId, type))) return;
 
     // Los mensajes seguidos se contestan juntos: si llegó otro después, contesta ese.
@@ -220,6 +228,13 @@ export class SalesAssistantService {
     return d.answer;
   }
 
+  private async staffFor(conversationId: string) {
+    return this.uow.read(async (tx) => {
+      const c = await tx.conversation.findFirst({ where: { id: conversationId }, select: { waContactId: true } });
+      return c ? findStaffByPhone(tx, c.waContactId) : null;
+    });
+  }
+
   loadConversation(id: string) {
     return this.uow.read((tx) =>
       tx.conversation.findFirst({
@@ -254,10 +269,11 @@ export class SalesAssistantService {
     const ctx = RequestContextStore.get();
     const webOrder = await this.webOrderFor(conversationId, messageId);
     const conversation = (await this.loadConversation(conversationId))!;
-    const [catalog, recommended, topSellers, history] = await Promise.all([
+    const [catalog, recommended, topSellers, instructions, history] = await Promise.all([
       this.uow.read((tx) => this.loadCatalog(tx)),
       this.uow.read((tx) => RecommendationsService.active(tx)),
       this.uow.read((tx) => this.loadTopSellers(tx)),
+      this.uow.read((tx) => AiOrdersService.activeTexts(tx)),
       this.uow.read((tx) =>
         tx.message.findMany({
           where: { conversationId },
@@ -280,7 +296,13 @@ export class SalesAssistantService {
       },
       {
         type: 'text',
-        text: [businessText({ minOrder: state.minOrder, coverage: COVERAGE, notes: conversation.account.assistantNotes, now: new Date() }), this.customerText(conversation)].join('\n\n'),
+        text: [
+          businessText({ minOrder: state.minOrder, coverage: COVERAGE, notes: conversation.account.assistantNotes, now: new Date() }),
+          instructionsForSales(instructions),
+          this.customerText(conversation),
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
       },
       ...(webOrder ? [{ type: 'text' as const, text: webOrderNote(webOrder.order, state.minOrder) }] : []),
     ];

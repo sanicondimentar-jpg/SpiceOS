@@ -319,13 +319,13 @@ export function messageForModel(m: StoredMessage): string {
  * o una persona del equipo es "assistant" (lo de una persona va marcado). Turnos seguidos del mismo lado
  * se juntan, y el historial siempre empieza por el cliente.
  */
-export function toTurns(messages: StoredMessage[]): { role: 'user' | 'assistant'; content: string }[] {
+export function toTurns(messages: StoredMessage[], sender = ASSISTANT_SENDER): { role: 'user' | 'assistant'; content: string }[] {
   const turns: { role: 'user' | 'assistant'; content: string }[] = [];
   for (const m of messages) {
     const role = m.direction === 'INBOUND' ? 'user' : 'assistant';
     let text = messageForModel(m).trim();
     if (!text) continue;
-    if (role === 'assistant' && m.sentBy !== ASSISTANT_SENDER) text = `[Respondió una persona del equipo] ${text}`;
+    if (role === 'assistant' && m.sentBy !== sender) text = `[Respondió una persona del equipo] ${text}`;
     const last = turns.at(-1);
     if (last?.role === role) last.content += `\n${text}`;
     else turns.push({ role, content: text });

@@ -1697,6 +1697,8 @@ model Conversation {
   assistantPausedUntil DateTime? @map("assistant_paused_until") @db.Timestamptz
   assistantHandoff     String?   @map("assistant_handoff")
   assistantHandoffAt   DateTime? @map("assistant_handoff_at") @db.Timestamptz
+  // Chat de un usuario del sistema (dueño, gerente): lo atiende el asistente interno y no se muestra en la bandeja.
+  isInternal           Boolean   @default(false) @map("is_internal")
 
   account  WhatsappAccount @relation(fields: [accountId], references: [id])
   customer Customer?       @relation(fields: [customerId], references: [id])
@@ -1988,4 +1990,42 @@ model RecommendationList {
 
   @@id([tenantId, segment])
   @@map("recommendation_lists")
+}
+
+// Órdenes a la IA: cada mensaje que un usuario del sistema (dueño, gerente) le manda a la IA por WhatsApp.
+model AiOrder {
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  conversationId String?   @map("conversation_id") @db.Uuid
+  messageId      String?   @map("message_id") @db.Uuid
+  request        String // lo que escribió (o el audio transcripto)
+  reply          String? // lo que contestó la IA
+  // DONE, AWAITING_CONFIRMATION, CONFIRMED, REJECTED, EXPIRED, FAILED
+  status         String    @default("DONE")
+  actions        Json      @default("[]") // [{ tool, summary, ok }]
+  // Acción delicada que espera un "sí": { tool, input, summary }
+  pendingAction  Json?     @map("pending_action")
+  confirmedAt    DateTime? @map("confirmed_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, userId, status])
+  @@map("ai_orders")
+}
+
+// Indicaciones vigentes para el asistente de ventas ("esta semana ofrecé el Combo Esencial").
+model AiInstruction {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  text      String
+  until     DateTime? @db.Date // inclusive; null = hasta que la corten
+  source    String    @default("whatsapp") // whatsapp | web
+  createdBy String    @map("created_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+  revokedBy String?   @map("revoked_by") @db.Uuid
+
+  @@index([tenantId, revokedAt])
+  @@map("ai_instructions")
 }

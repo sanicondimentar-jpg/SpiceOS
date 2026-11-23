@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  BarChart3, Boxes, ClipboardList, FileText, Tags, Upload, LayoutDashboard, MessageCircle, Package, Receipt, Settings, ShoppingCart, Truck, Users, Wallet, Workflow, Target,
+  BarChart3, Bot, Boxes, ClipboardList, FileText, Tags, Upload, LayoutDashboard, MessageCircle, Package, Receipt, Settings, ShoppingCart, Truck, Users, Wallet, Workflow, Target,
 } from 'lucide-react';
 import { usePendingReceipts } from '@/lib/receipts';
 import { cn } from '@/lib/utils';
@@ -27,6 +27,7 @@ const NAV = [
   { href: '/documents', label: 'Documentos', icon: FileText, perm: 'documents.document.read' },
   { href: '/automation', label: 'Automatizaciones', icon: Workflow, perm: 'automation.rule.read' },
   { href: '/analytics', label: 'Inteligencia', icon: BarChart3, perm: 'analytics.executive.read' },
+  { href: '/ai-orders', label: 'Órdenes a la IA', icon: Bot, perm: 'ai.order.read' },
   { href: '/imports', label: 'Importar', icon: Upload, perm: 'crm.customer.write' },
   { href: '/settings', label: 'Configuración', icon: Settings, perm: 'core.settings.manage' },
 ];
