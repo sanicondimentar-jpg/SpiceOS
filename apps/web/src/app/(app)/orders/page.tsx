@@ -28,14 +28,15 @@ export default function OrdersPage() {
         <h1 className="text-2xl font-semibold">Pedidos</h1>
         {canWrite && <Button asChild size="sm" className="ml-auto"><Link href="/orders/new"><Plus className="h-4 w-4" /> Nuevo pedido</Link></Button>}
       </div>
-      <div role="tablist" aria-label="Estado" className="flex flex-wrap gap-2">
+      {/* En el celular los estados se deslizan de costado en una sola fila. */}
+      <div role="tablist" aria-label="Estado" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0">
         {TABS.map((s) => (
           <button
             key={s ?? 'all'}
             role="tab"
             aria-selected={s === status}
             onClick={() => setStatus(s)}
-            className={cn('rounded-full border px-3 py-1.5 text-sm', s === status ? 'border-primary bg-primary/10 font-medium text-primary' : 'hover:bg-accent')}
+            className={cn('shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm', s === status ? 'border-primary bg-primary/10 font-medium text-primary' : 'hover:bg-accent')}
           >
             {s ? STATUS_LABEL[s] : 'Todos'}
             {s === 'PENDING_REVIEW' && !!pending?.length && (
@@ -57,7 +58,26 @@ export default function OrdersPage() {
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input className="pl-9" placeholder="Buscar por número o cliente" aria-label="Buscar pedidos" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      <Card className="overflow-x-auto">
+      {/* Celular: tarjetas que se tocan enteras. Compu: tabla. */}
+      <div className="space-y-2 md:hidden">
+        {isLoading && Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}
+        {data?.map((o) => (
+          <Link key={o.id} href={`/orders/${o.id}`} className="block rounded-lg border bg-card p-3 active:bg-accent/60">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-medium">{o.number}</span>
+              <Badge tone={STATUS_TONE[o.status]}>{STATUS_LABEL[o.status]}</Badge>
+              <span className="ml-auto text-xs text-muted-foreground">{CHANNEL_LABEL[o.channel] ?? o.channel}</span>
+            </div>
+            <div className="mt-1 font-medium">{o.customer}</div>
+            <div className="mt-1 flex items-center justify-between text-sm">
+              <span className="text-xs text-muted-foreground">{date(o.createdAt)}{o.requestedDate && ` · entrega ${date(o.requestedDate)}`}</span>
+              <span className="tabular-nums">{money(o.grandTotal)}{!o.withInvoice && <span className="ml-1 text-xs text-muted-foreground">s/f</span>}</span>
+            </div>
+          </Link>
+        ))}
+        {data?.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No hay pedidos{status && ` ${STATUS_LABEL[status].toLowerCase()}s`}.</p>}
+      </div>
+      <Card className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[720px] text-sm">
           <thead className="border-b text-left text-xs text-muted-foreground">
             <tr>

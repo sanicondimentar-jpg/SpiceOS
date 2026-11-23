@@ -36,7 +36,7 @@ export default function InventoryPage() {
           <Button asChild variant="outline" size="sm"><Link href="/inventory/movements"><History className="h-4 w-4" /> Movimientos</Link></Button>
           {canAdjust && (
             <>
-              <Button asChild variant="outline" size="sm"><Link href="/imports?kind=stock"><Upload className="h-4 w-4" /> Cargar stock inicial</Link></Button>
+              <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex"><Link href="/imports?kind=stock"><Upload className="h-4 w-4" /> Cargar stock inicial</Link></Button>
               <Button variant="outline" size="sm" onClick={() => setBreaking((v) => !v)}><PackageOpen className="h-4 w-4" /> Abrir cajas</Button>
               <Button asChild size="sm"><Link href="/inventory/receive"><PackagePlus className="h-4 w-4" /> Ingreso de mercadería</Link></Button>
             </>
@@ -62,7 +62,35 @@ export default function InventoryPage() {
         </label>
       </div>
 
-      <Card className="overflow-x-auto">
+      {/* Celular: tarjetas; al tocar una se ven los vencimientos y se puede ajustar o contar. Compu: tabla. */}
+      <div className="space-y-2 md:hidden">
+        {isLoading && Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+        {data?.map((r) => (
+          <div key={r.variantId} className={cn('rounded-lg border bg-card', open === r.variantId && 'ring-1 ring-primary/30')}>
+            <button className="flex w-full items-center gap-3 p-3 text-left" onClick={() => setOpen(open === r.variantId ? null : r.variantId)} aria-expanded={open === r.variantId}>
+              <div className="min-w-0 flex-1">
+                <div className="font-medium leading-snug">{r.name}</div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="font-mono">{r.sku}</span>
+                  {r.reserved > 0 && <span>· {number(r.reserved)} reservado</span>}
+                  {r.nextExpiry && <span>· vence</span>}
+                  {r.nextExpiry && <Expiry value={r.nextExpiry} />}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-lg font-semibold tabular-nums leading-none">{number(r.available)}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">disponible</div>
+                {r.low && <Badge tone={r.available <= 0 ? 'bad' : 'warn'} className="mt-1">{r.available <= 0 ? 'sin stock' : 'reponer'}</Badge>}
+              </div>
+              {open === r.variantId ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
+            </button>
+            {open === r.variantId && <div className="border-t bg-muted/30 p-3"><Lots row={r} canAdjust={canAdjust} /></div>}
+          </div>
+        ))}
+        {data?.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">{onlyLow ? 'No hay productos para reponer.' : 'Sin resultados.'}</p>}
+      </div>
+
+      <Card className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[820px] text-sm">
           <thead className="border-b text-left text-xs text-muted-foreground">
             <tr>
@@ -130,9 +158,9 @@ function Lots({ row, canAdjust }: { row: StockRow; canAdjust: boolean }) {
           <tr>
             <th className="py-1 font-medium">Lote</th>
             <th className="py-1 font-medium">Vence</th>
-            <th className="py-1 font-medium">Depósito</th>
+            <th className="hidden py-1 font-medium sm:table-cell">Depósito</th>
             <th className="py-1 text-right font-medium">Existente</th>
-            <th className="py-1 text-right font-medium">Reservado</th>
+            <th className="hidden py-1 text-right font-medium sm:table-cell">Reservado</th>
             <th className="py-1" />
           </tr>
         </thead>
@@ -142,9 +170,9 @@ function Lots({ row, canAdjust }: { row: StockRow; canAdjust: boolean }) {
               <tr>
                 <td className="py-1 font-mono text-xs">{l.lot ?? 'sin lote'}</td>
                 <td className="py-1"><Expiry value={l.expiresAt} /></td>
-                <td className="py-1">{l.warehouse}</td>
+                <td className="hidden py-1 sm:table-cell">{l.warehouse}</td>
                 <td className="py-1 text-right tabular-nums">{number(l.onHand)}</td>
-                <td className="py-1 text-right tabular-nums">{l.reserved ? number(l.reserved) : '—'}</td>
+                <td className="hidden py-1 text-right tabular-nums sm:table-cell">{l.reserved ? number(l.reserved) : '—'}</td>
                 <td className="py-1 text-right">
                   {canAdjust && editing !== l.stockItemId && (
                     <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setEditing(l.stockItemId); setForm({ mode: 'count', quantity: String(l.onHand), reason: '' }); adjust.reset(); }}>Ajustar</Button>
@@ -175,7 +203,7 @@ function Lots({ row, canAdjust }: { row: StockRow; canAdjust: boolean }) {
                       }}
                     >
                       <Field label="Tipo" htmlFor="adj-mode">
-                        <Select id="adj-mode" className="w-44" value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value as typeof form.mode, quantity: e.target.value === 'count' ? String(l.onHand) : '' })}>
+                        <Select id="adj-mode" className="w-full sm:w-44" value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value as typeof form.mode, quantity: e.target.value === 'count' ? String(l.onHand) : '' })}>
                           <option value="count">Conteo (cantidad real)</option>
                           <option value="delta">Ajuste (+ / −)</option>
                           <option value="waste">Merma (roto, vencido)</option>
