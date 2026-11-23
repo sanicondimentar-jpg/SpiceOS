@@ -12,20 +12,20 @@ export function Topbar({ onCopilot, onMenu }: { onCopilot: () => void; onMenu: (
   const { data: alerts } = useAlerts();
   const urgent = alerts?.items.filter((a) => a.severity !== 'low').length ?? 0;
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card px-2 md:gap-3 md:px-4 print:hidden">
+    <header className="flex h-14 items-center gap-3 border-b bg-card px-4 print:hidden">
       <Button variant="ghost" size="icon" aria-label="Menú" className="md:hidden" onClick={onMenu}>
         <Menu className="h-5 w-5" />
       </Button>
       <button
         onClick={onCopilot}
-        className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border bg-background px-3 text-left text-sm text-muted-foreground md:max-w-md"
+        className="flex h-9 flex-1 items-center gap-2 rounded-md border bg-background px-3 text-left text-sm text-muted-foreground md:max-w-md"
       >
-        <Search className="h-4 w-4 shrink-0" />
-        <span className="truncate"><span className="md:hidden">Buscar o preguntar…</span><span className="hidden md:inline">Buscar o preguntarle al copiloto…</span></span>
-        <kbd className="ml-auto hidden rounded border px-1.5 text-[10px] md:inline">⌘K</kbd>
+        <Search className="h-4 w-4" />
+        Buscar o preguntarle al copiloto…
+        <kbd className="ml-auto rounded border px-1.5 text-[10px]">⌘K</kbd>
       </button>
-      <Button variant="secondary" size="sm" onClick={onCopilot} aria-label="Copiloto" className="px-2.5 md:px-3">
-        <Sparkles className="h-4 w-4" /> <span className="hidden md:inline">Copiloto</span>
+      <Button variant="secondary" size="sm" onClick={onCopilot}>
+        <Sparkles className="h-4 w-4" /> Copiloto
       </Button>
       <Button asChild variant="ghost" size="icon" className="relative" title="Avisos">
         <Link href="/automation" aria-label={urgent ? `Avisos: ${urgent} para revisar` : 'Avisos'}>
@@ -37,7 +37,7 @@ export function Topbar({ onCopilot, onMenu }: { onCopilot: () => void; onMenu: (
           )}
         </Link>
       </Button>
-      <div className="hidden h-8 w-8 place-items-center rounded-full bg-muted text-xs font-semibold md:grid" title={me?.user.fullName}>
+      <div className="grid h-8 w-8 place-items-center rounded-full bg-muted text-xs font-semibold" title={me?.user.fullName}>
         {me?.user.fullName?.slice(0, 2).toUpperCase() ?? '··'}
       </div>
       <Button variant="ghost" size="icon" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={() => void signOut({ callbackUrl: '/login' })}>

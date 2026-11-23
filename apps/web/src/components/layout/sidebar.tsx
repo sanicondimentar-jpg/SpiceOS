@@ -10,7 +10,6 @@ import { cn } from '@/lib/utils';
 import { useMe } from '@/lib/hooks';
 import { useOrders } from '@/lib/orders';
 import { useUnreadChats } from '@/lib/messaging';
-import { InstallAppButton } from './install-app';
 
 const NAV = [
   { href: '/', label: 'Inicio', icon: LayoutDashboard },
@@ -90,7 +89,6 @@ export function Sidebar({ mobileOpen = false, onClose }: { mobileOpen?: boolean;
             );
           })}
         </nav>
-        <InstallAppButton onDone={onClose} />
       </aside>
     </>
   );

@@ -5,8 +5,6 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { Topbar } from '@/components/layout/topbar';
 import { CopilotPanel } from '@/components/copilot/copilot-panel';
 import { ServerDown } from '@/components/layout/server-down';
-import { InstallBanner } from '@/components/layout/install-app';
-import { MobileNav } from '@/components/layout/mobile-nav';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [copilot, setCopilot] = useState(false);
@@ -28,14 +26,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden print:block print:h-auto">
+    <div className="flex h-screen overflow-hidden print:block print:h-auto">
       <Sidebar mobileOpen={menu} onClose={() => setMenu(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onCopilot={() => setCopilot(true)} onMenu={() => setMenu(true)} />
         <ServerDown />
-        <InstallBanner />
         <main className="flex-1 overflow-y-auto p-4 md:p-6 print:overflow-visible print:p-0">{children}</main>
-        <MobileNav onMenu={() => setMenu(true)} />
       </div>
       <CopilotPanel open={copilot} onClose={() => setCopilot(false)} />
     </div>
