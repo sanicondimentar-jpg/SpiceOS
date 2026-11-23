@@ -24,6 +24,11 @@ const createTaskSchema = z.object({
 export class TasksController {
   constructor(private readonly tasks: TasksService) {}
 
+  @Get()
+  open() {
+    return this.tasks.open();
+  }
+
   @Get('mine')
   mine() {
     return this.tasks.mine();
