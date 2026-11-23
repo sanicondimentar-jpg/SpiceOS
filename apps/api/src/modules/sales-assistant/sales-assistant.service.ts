@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'node:crypto';
 import { LlmService } from '../../shared/ai/llm.service';
+import { loginCodeIn } from '../customer-portal/portal-code';
 import { loadCombos } from '../catalog/application/combos';
 import { comboSku } from '../catalog/domain/combos';
 import { env } from '../../shared/config/env';
@@ -175,6 +176,9 @@ export class SalesAssistantService {
   }
 
   private async handle(conversationId: string, messageId: string, type: string) {
+    // El código para entrar al portal de clientes lo contesta el portal, no el asistente.
+    const body = await this.uow.read((tx) => tx.message.findUnique({ where: { id: messageId }, select: { body: true } }));
+    if (loginCodeIn(body?.body)) return;
     // Si escribe un usuario del sistema (dueño, gerente) desde su celular vinculado, no se le vende: lo atiende el asistente interno.
     const staff = await this.staffFor(conversationId);
     if (staff) return this.staffAssistant.handle(conversationId, messageId, type, staff);

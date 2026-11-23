@@ -150,7 +150,7 @@ export class ConversationsService {
           error: m.error,
           intent: m.intent,
           sentAt: m.sentAt,
-          sentBy: m.sentBy === 'whatsapp-app' ? 'Celular' : m.sentBy === 'assistant:whatsapp' ? 'Asistente' : m.sentBy?.startsWith('agent:') ? 'Copiloto' : (m.sentBy && names.get(m.sentBy)) ?? null,
+          sentBy: m.sentBy === 'whatsapp-app' ? 'Celular' : m.sentBy === 'assistant:whatsapp' ? 'Asistente' : m.sentBy === 'system:portal' ? 'Portal' : m.sentBy?.startsWith('agent:') ? 'Copiloto' : (m.sentBy && names.get(m.sentBy)) ?? null,
         })),
       };
     });

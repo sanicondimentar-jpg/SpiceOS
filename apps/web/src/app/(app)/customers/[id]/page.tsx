@@ -13,6 +13,7 @@ import { useCustomerAccount } from '@/lib/collections';
 import { ContactsCard } from '@/components/crm/contacts-card';
 import { CustomerDetailsCard } from '@/components/crm/customer-details-card';
 import { CustomerOrdersCard } from '@/components/crm/customer-orders-card';
+import { PortalCard } from '@/components/crm/portal-card';
 
 const MISSING_LABEL: Record<string, string> = { phone: 'el teléfono', address: 'la dirección' };
 
@@ -92,6 +93,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
         <div className="space-y-4">
           <CustomerDetailsCard customer={c} missing={missing} canWrite={canWrite} />
           <ContactsCard customerId={id} canWrite={canWrite} />
+          <PortalCard customerId={id} phone={c.phone} canWrite={canWrite} />
           <Card>
             <CardHeader><CardTitle>Riesgo financiero</CardTitle></CardHeader>
             <CardContent className="text-sm">
