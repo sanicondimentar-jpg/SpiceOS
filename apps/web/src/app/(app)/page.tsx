@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { money, number } from '@/lib/utils';
 import { OrderBoard } from '@/components/orders/order-board';
+import { PendingTasks } from '@/components/tasks/pending-tasks';
 import { useExecutiveKpis, useMe, useRevenueByMonth } from '@/lib/hooks';
 
 export default function DashboardPage() {
@@ -23,6 +24,8 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-semibold">Hola{me ? `, ${me.user.fullName.split(' ')[0]}` : ''}</h1>
         <p className="text-sm text-muted-foreground">Así viene el mes. Abrí el copiloto con ⌘K para preguntar cualquier cosa.</p>
       </div>
+
+      <PendingTasks userId={me?.user.id} />
 
       {canSeeOrders && <OrderBoard canWrite={!!me?.permissions.includes('orders.order.write')} />}
 

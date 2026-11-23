@@ -60,6 +60,28 @@ export class TasksService {
     );
   }
 
+  /** Pendientes de toda la empresa (para la tarjeta de Inicio): equipo chico, todos ven todo. */
+  async open() {
+    const tasks = await this.uow.read((tx) =>
+      tx.task.findMany({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: [{ createdAt: 'asc' }], take: 50 }),
+    );
+    const ids = [...new Set(tasks.map((t) => t.assigneeId).filter((x): x is string => !!x))];
+    const users = ids.length
+      ? await this.uow.read((tx) => tx.user.findMany({ where: { id: { in: ids } }, select: { id: true, fullName: true } }))
+      : [];
+    const names = new Map(users.map((u) => [u.id, u.fullName]));
+    return tasks.map((t) => ({
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      priority: t.priority,
+      dueAt: t.dueAt,
+      createdAt: t.createdAt,
+      assigneeId: t.assigneeId,
+      assigneeName: t.assigneeId ? (names.get(t.assigneeId) ?? null) : null,
+    }));
+  }
+
   complete(id: string) {
     return this.uow.run((tx) => tx.task.update({ where: { id }, data: { status: 'DONE', completedAt: new Date() } }));
   }
