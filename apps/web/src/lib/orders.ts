@@ -60,6 +60,8 @@ export interface OrderDetail {
   id: string;
   number: string;
   status: OrderStatus;
+  /** Cajas que el sistema abrió solo para armar los sueltos (y combos) de este pedido. */
+  openedPacks: { sku: string; description: string; packs: number }[];
   statusLabel: string;
   nextStatuses: string[];
   version: number;
@@ -180,7 +182,7 @@ export interface Shortage {
 }
 
 export const useConfirmOrder = (id: string) =>
-  useOrderMutation(() => api<{ status: string; shortages: Shortage[] }>(`/orders/${id}/confirm`, { method: 'POST' }));
+  useOrderMutation(() => api<{ status: string; shortages: Shortage[]; openedPacks: { sku: string; description: string; packs: number }[] }>(`/orders/${id}/confirm`, { method: 'POST' }));
 
 export const useOrderTransition = (id: string) =>
   useOrderMutation((input: OrderTransitionInput) => api<{ status: string }>(`/orders/${id}/status`, { method: 'POST', body: JSON.stringify(input) }));

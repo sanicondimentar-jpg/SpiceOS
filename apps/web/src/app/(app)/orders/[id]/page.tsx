@@ -81,6 +81,7 @@ function Order({ id }: { id: string }) {
       ) : (
         <>
           {o.notes && <Card><CardContent className="p-4 text-sm"><span className="text-muted-foreground">Notas: </span>{o.notes}</CardContent></Card>}
+          {o.openedPacks.length > 0 && o.status !== 'CANCELLED' && <OpenedPacks order={o} />}
           <Lines order={o} />
           <OrderInvoices order={o} can={can} />
           {can('receivables.account.read') && o.status !== 'CANCELLED' && <OrderCollection order={o} canWrite={can('receivables.payment.write')} />}
@@ -192,7 +193,7 @@ function Actions({ order, can, onEdit, onConfirmed, initialError }: {
         </form>
       )}
       {order.status === 'READY' && <p className="text-xs text-muted-foreground">Al despachar se descuenta el stock de los lotes reservados.</p>}
-      {review && <p className="text-right text-xs text-muted-foreground">Al aprobarlo se reserva lo que hay en stock; lo que falte se suma a la nota de pedido del proveedor.</p>}
+      {review && <p className="text-right text-xs text-muted-foreground">Al aprobarlo se reserva lo que hay en stock (si faltan sueltos, el sistema abre las cajas); lo que igual falte se suma a la nota de pedido del proveedor.</p>}
       {error && <p className="text-right text-sm text-destructive">{error}</p>}
     </div>
   );
@@ -384,6 +385,28 @@ function WebReview({ order }: { order: OrderDetail }) {
   );
 }
 
+/** Cajas que abrió el sistema para los sueltos del pedido: el que prepara sabe cuál agarrar. */
+function OpenedPacks({ order }: { order: OrderDetail }) {
+  const done = order.status === 'DISPATCHED' || order.status === 'DELIVERED' || order.status === 'INVOICED';
+  return (
+    <Card className="border-primary/40">
+      <CardContent className="space-y-2 p-4 text-sm">
+        <p className="font-medium">{done ? 'Para los sueltos de este pedido se abrieron estas cajas:' : 'Para armar los sueltos de este pedido, abrí estas cajas:'}</p>
+        <ul className="space-y-1">
+          {order.openedPacks.map((p) => (
+            <li key={p.sku}>
+              <span className="font-semibold tabular-nums">{number(p.packs)} ×</span> {p.description} <span className="font-mono text-xs text-muted-foreground">[{p.sku}]</span>
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs text-muted-foreground print:hidden">
+          El sistema ya las descontó del stock y sumó los sueltos (eligió la presentación con más cajas). Los sueltos que sobren quedan en el stock.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 /** Resultado de la confirmación cuando faltó mercadería. */
 function ShortagesResult({ shortages, onClose }: { shortages: Shortage[]; onClose: () => void }) {
   return (
@@ -397,7 +420,7 @@ function ShortagesResult({ shortages, onClose }: { shortages: Shortage[]; onClos
           {shortages.map((s) => (
             <li key={s.sku}>
               <span className="font-medium">{s.description}</span> ({s.sku}): faltan {number(s.missing)}.
-              {s.openPacks && ` Abrí ${s.openPacks.packs} caja${s.openPacks.packs > 1 ? 's' : ''} ${s.openPacks.sku} del depósito.`}
+              {s.openPacks && ` Hay ${s.openPacks.packs} caja${s.openPacks.packs > 1 ? 's' : ''} ${s.openPacks.sku} en el depósito.`}
               {s.purchase && (
                 <>
                   {' '}Se pidieron {number(s.purchase.quantity)} × {s.purchase.sku} a {s.purchase.supplier} en{' '}

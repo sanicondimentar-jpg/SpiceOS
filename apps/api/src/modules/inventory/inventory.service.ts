@@ -9,6 +9,7 @@ import { RequestContextStore } from '../../shared/tenancy/request-context';
 import { UnitOfWork, UowScope } from '../../shared/unit-of-work';
 import { ProductsService } from '../catalog/application/products.service';
 import { allocateFefo } from './fefo';
+import { pickPacks } from './pack-sources';
 import { lotCodeFor } from './lot-code';
 import { InventoryFacade } from './inventory.facade';
 
@@ -190,40 +191,93 @@ export class InventoryService {
       const variants = await this.variantsById(tx, [input.fromVariantId, input.toVariantId]);
       const from = variants.get(input.fromVariantId)!;
       const to = variants.get(input.toVariantId)!;
-      const balances = await tx.$queryRaw<{ id: string; lot_id: string | null; code: string | null; expires_at: Date | null; available: number }[]>`
-        SELECT s.id, s.lot_id, l.code, l.expires_at, (s.on_hand - s.reserved)::float AS available
-        FROM stock_items s LEFT JOIN lots l ON l.id = s.lot_id
-        WHERE s.warehouse_id = ${input.warehouseId}::uuid AND s.variant_id = ${input.fromVariantId}::uuid
-        FOR UPDATE OF s`;
-      const plan = allocateFefo(
-        balances.map((b) => ({ stockItemId: b.id, lotId: b.lot_id, expiresAt: b.expires_at, available: b.available })),
-        input.packs,
-      );
-      if (!plan) {
-        const available = balances.reduce((s, b) => s + Math.max(b.available, 0), 0);
-        throw new BusinessRuleError(`Hay ${available} cajas ${from.sku} disponibles y se quieren abrir ${input.packs}`);
-      }
-      const unitCost = Math.round((from.cost / input.unitsPerPack) * 10000) / 10000;
-      const reason = `Apertura de ${input.packs} × ${from.sku} en ${to.sku} (${input.unitsPerPack} por caja)`;
-      for (const part of plan) {
-        const source = balances.find((b) => b.id === part.stockItemId)!;
-        await this.ledger.post(tx, { warehouseId: input.warehouseId, variantId: from.id, lotId: part.lotId, type: 'PRODUCTION_OUT', quantity: -part.quantity, unitCost: from.cost, referenceType: 'break_pack', reason });
-        const lot = source.code ? await this.ledger.lot(tx, to.id, source.code, source.expires_at) : null;
-        await this.ledger.post(tx, {
-          warehouseId: input.warehouseId,
-          variantId: to.id,
-          lotId: lot?.id ?? null,
-          type: 'PRODUCTION_IN',
-          quantity: part.quantity * input.unitsPerPack,
-          unitCost,
-          referenceType: 'break_pack',
-          reason,
-        });
-      }
+      const lots = await this.openPacks(tx, { warehouseId: input.warehouseId, from, to, packs: input.packs, unitsPerPack: input.unitsPerPack, referenceType: 'break_pack' });
       scope.auditLog({ action: 'stock.break_pack', entityType: 'variant', entityId: from.id, after: { ...input } });
       await this.checkBelowMinimum(tx, scope, [from.id]);
-      return { packs: input.packs, units: input.packs * input.unitsPerPack, lots: plan.length };
+      return { packs: input.packs, units: input.packs * input.unitsPerPack, lots };
     });
+  }
+
+  /**
+   * Un pedido necesita `units` sueltos que no hay: abre cajas del mismo sobre, siempre la
+   * presentación con más cajas en stock. Deja los movimientos ligados al pedido, para que en el
+   * pedido se vea qué caja agarrar. Devuelve las cajas abiertas (vacío si no había ninguna).
+   */
+  async openPacksForOrder(tx: Tx, scope: UowScope, input: { warehouseId: string; unitVariantId: string; units: number; order: { id: string; number: string } }) {
+    const sources = (await this.ledger.packSources(tx, input.warehouseId, [input.unitVariantId])).get(input.unitVariantId) ?? [];
+    const plan = pickPacks(input.units, sources);
+    if (!plan.length) return [];
+    const variants = await this.variantsById(tx, [input.unitVariantId, ...plan.map((p) => p.variantId)]);
+    const to = variants.get(input.unitVariantId)!;
+    const opened: { variantId: string; sku: string; packs: number; units: number }[] = [];
+    for (const p of plan) {
+      await this.openPacks(tx, {
+        warehouseId: input.warehouseId,
+        from: variants.get(p.variantId)!,
+        to,
+        packs: p.packs,
+        unitsPerPack: p.perPack,
+        referenceType: 'sales_order',
+        referenceId: input.order.id,
+        reasonSuffix: ` para el pedido ${input.order.number}`,
+        sellableOnly: true,
+      });
+      opened.push({ variantId: p.variantId, sku: p.sku, packs: p.packs, units: p.packs * p.perPack });
+    }
+    scope.auditLog({ action: 'stock.auto_break_pack', entityType: 'order', entityId: input.order.id, after: { unit: to.sku, opened } });
+    return opened;
+  }
+
+  /** Saca `packs` cajas por FEFO y entran los sueltos con el mismo lote. Devuelve cuántos lotes tocó. */
+  private async openPacks(
+    tx: Tx,
+    input: {
+      warehouseId: string;
+      from: { id: string; sku: string; cost: number };
+      to: { id: string; sku: string };
+      packs: number;
+      unitsPerPack: number;
+      referenceType: string;
+      referenceId?: string;
+      reasonSuffix?: string;
+      /** Solo lotes que se pueden vender (aprobados y sin vencer). */
+      sellableOnly?: boolean;
+    },
+  ) {
+    const { from, to } = input;
+    const rows = await tx.$queryRaw<{ id: string; lot_id: string | null; code: string | null; expires_at: Date | null; sellable: boolean; available: number }[]>`
+      SELECT s.id, s.lot_id, l.code, l.expires_at, (s.on_hand - s.reserved)::float AS available,
+             (l.id IS NULL OR (l.quality_status = 'APPROVED' AND (l.expires_at IS NULL OR l.expires_at > current_date))) AS sellable
+      FROM stock_items s LEFT JOIN lots l ON l.id = s.lot_id
+      WHERE s.warehouse_id = ${input.warehouseId}::uuid AND s.variant_id = ${from.id}::uuid
+      FOR UPDATE OF s`;
+    const balances = input.sellableOnly ? rows.filter((b) => b.sellable) : rows;
+    const plan = allocateFefo(
+      balances.map((b) => ({ stockItemId: b.id, lotId: b.lot_id, expiresAt: b.expires_at, available: b.available })),
+      input.packs,
+    );
+    if (!plan) {
+      const available = balances.reduce((s, b) => s + Math.max(b.available, 0), 0);
+      throw new BusinessRuleError(`Hay ${available} cajas ${from.sku} disponibles y se quieren abrir ${input.packs}`);
+    }
+    const unitCost = Math.round((from.cost / input.unitsPerPack) * 10000) / 10000;
+    const reason = `Apertura de ${input.packs} × ${from.sku} en ${to.sku} (${input.unitsPerPack} por caja)${input.reasonSuffix ?? ''}`;
+    const ref = { referenceType: input.referenceType, referenceId: input.referenceId, reason };
+    for (const part of plan) {
+      const source = balances.find((b) => b.id === part.stockItemId)!;
+      await this.ledger.post(tx, { warehouseId: input.warehouseId, variantId: from.id, lotId: part.lotId, type: 'PRODUCTION_OUT', quantity: -part.quantity, unitCost: from.cost, ...ref });
+      const lot = source.code ? await this.ledger.lot(tx, to.id, source.code, source.expires_at) : null;
+      await this.ledger.post(tx, {
+        warehouseId: input.warehouseId,
+        variantId: to.id,
+        lotId: lot?.id ?? null,
+        type: 'PRODUCTION_IN',
+        quantity: part.quantity * input.unitsPerPack,
+        unitCost,
+        ...ref,
+      });
+    }
+    return plan.length;
   }
 
   movements(query: MovementsQuery) {

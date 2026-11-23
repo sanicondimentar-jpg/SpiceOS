@@ -26,6 +26,9 @@ import { addsVat } from '../invoicing/fiscal-settings.service';
 import { CollectionsService } from '../receivables/collections.service';
 import { orderTax, storedTax } from './order-tax';
 
+/** Cajas que el sistema abrió para un pedido. */
+type OpenedPacks = { variantId: string; sku: string; packs: number; units: number };
+
 class OrderEvents extends AggregateRoot {
   emit(e: DomainEvent) {
     this.record(e);
@@ -217,30 +220,28 @@ export class OrdersService {
 
   /**
    * Confirma (o aprueba un pedido web): valida cliente y reserva por FEFO lo que haya en stock
-   * (guardando qué lote). Lo que falta queda pendiente en la línea y se suma a la nota de pedido
+   * (guardando qué lote). Si faltan sueltos (también los de un combo), abre solo las cajas que
+   * hagan falta. Lo que igual falta queda pendiente en la línea y se suma a la nota de pedido
    * del proveedor; se reserva al empezar la preparación.
    */
   confirm(id: string) {
-    const ctx = RequestContextStore.get();
     return this.uow.run(async (tx, scope) => {
       const order = await this.findOrder(tx, id);
       this.assertTransition(order.status, 'CONFIRMED');
       await this.crm.assertCanOrder(tx, order.customerId);
       const short: ShortageLine[] = [];
+      const opened: OpenedPacks[] = [];
       const kits = await this.inventory.kitComponents(tx, order.lines.map((l) => l.variantId));
-      // Primero cajas y granel, después sueltos y al final combos: los sueltos que falten se cubren
-      // abriendo las cajas que sobren.
+      // Primero cajas y granel, después sueltos y al final combos: así no se abre una caja que el
+      // mismo pedido lleva cerrada.
       const rank = (l: (typeof order.lines)[number]) => (kits.has(l.variantId) ? 2 : l.variant.sku.endsWith('-U') ? 1 : 0);
       const lines = [...order.lines].sort((a, b) => rank(a) - rank(b));
       for (const line of lines) {
         // Un combo reserva cada componente; la reserva queda en la línea del combo.
-        const parts = kits.get(line.variantId)?.map((c) => ({ variantId: c.variantId, perUnit: c.quantity })) ?? [{ variantId: line.variantId, perUnit: 1 }];
+        const parts = kits.get(line.variantId)?.map((c) => ({ variantId: c.variantId, sku: c.sku, perUnit: c.quantity })) ?? [{ variantId: line.variantId, sku: line.variant.sku, perUnit: 1 }];
         let backorder = 0;
         for (const part of parts) {
-          const { allocations, missing } = await this.inventory.reserveUpTo(tx, order.warehouseId, part.variantId, Number(line.quantity) * part.perUnit);
-          await tx.orderAllocation.createMany({
-            data: allocations.map((a) => ({ tenantId: ctx.tenantId, orderLineId: line.id, stockItemId: a.stockItemId, lotId: a.lotId, quantity: a.quantity })),
-          });
+          const missing = await this.reserveOpeningPacks(tx, scope, order, line.id, part, Number(line.quantity) * part.perUnit, opened);
           if (missing > 0) {
             short.push({ orderLineId: line.id, variantId: part.variantId, missing });
             backorder = Math.max(backorder, Math.ceil(missing / part.perUnit));
@@ -253,13 +254,60 @@ export class OrdersService {
         : [];
       await this.setStatus(tx, order, 'CONFIRMED', { confirmedAt: new Date() }, order.status === 'PENDING_REVIEW' ? 'Pedido web aprobado' : undefined);
       this.emit(scope, 'order.confirmed', order, { confirmedAt: new Date().toISOString(), backorder: short.length > 0 });
-      scope.auditLog({ action: 'order.confirm', entityType: 'order', entityId: id, after: { shortages } });
+      scope.auditLog({ action: 'order.confirm', entityType: 'order', entityId: id, after: { shortages, openedPacks: opened } });
       await this.stock.checkBelowMinimum(tx, scope, [
         ...order.lines.filter((l) => !kits.has(l.variantId)).map((l) => l.variantId),
         ...[...kits.values()].flatMap((c) => c.map((x) => x.variantId)),
+        ...opened.map((o) => o.variantId),
       ]);
-      return { id, status: 'CONFIRMED', shortages };
+      return { id, status: 'CONFIRMED', shortages, openedPacks: await this.describeOpened(tx, opened) };
     });
+  }
+
+  /**
+   * Reserva `quantity` de una presentación para la línea. Si es un suelto y no alcanza, abre cajas
+   * (la que más stock tenga) y reserva lo que salió. Devuelve lo que igual faltó.
+   */
+  private async reserveOpeningPacks(
+    tx: Tx,
+    scope: UowScope,
+    order: { id: string; number: string; warehouseId: string },
+    orderLineId: string,
+    part: { variantId: string; sku: string },
+    quantity: number,
+    opened: OpenedPacks[],
+  ) {
+    const ctx = RequestContextStore.get();
+    const first = await this.inventory.reserveUpTo(tx, order.warehouseId, part.variantId, quantity);
+    let { allocations, missing } = first;
+    if (missing > 0 && /-U$/i.test(part.sku)) {
+      const packs = await this.stock.openPacksForOrder(tx, scope, { warehouseId: order.warehouseId, unitVariantId: part.variantId, units: missing, order });
+      if (packs.length) {
+        opened.push(...packs);
+        const second = await this.inventory.reserveUpTo(tx, order.warehouseId, part.variantId, missing);
+        allocations = [...allocations, ...second.allocations];
+        missing = second.missing;
+      }
+    }
+    if (allocations.length) {
+      await tx.orderAllocation.createMany({
+        data: allocations.map((a) => ({ tenantId: ctx.tenantId, orderLineId, stockItemId: a.stockItemId, lotId: a.lotId, quantity: a.quantity })),
+      });
+    }
+    return missing;
+  }
+
+  /** Cajas abiertas, sumadas por presentación y con su nombre, para mostrar qué caja agarrar. */
+  private async describeOpened(tx: Tx, opened: { variantId: string; packs: number }[]) {
+    const byVariant = new Map<string, number>();
+    for (const o of opened) byVariant.set(o.variantId, (byVariant.get(o.variantId) ?? 0) + o.packs);
+    if (!byVariant.size) return [];
+    const variants = await tx.productVariant.findMany({
+      where: { id: { in: [...byVariant.keys()] } },
+      select: { id: true, sku: true, name: true, product: { select: { name: true } } },
+      orderBy: { sku: 'asc' },
+    });
+    return variants.map((v) => ({ sku: v.sku, description: `${v.product.name} ${v.name}`, packs: byVariant.get(v.id)! }));
   }
 
   /** Preparación, despacho (descuenta stock de los lotes reservados), entrega y cancelación. */
@@ -286,7 +334,7 @@ export class OrdersService {
         if (order.status === 'PENDING_REVIEW' && order.createdCustomer) await this.crm.discardWebProspect(tx, scope, order.customerId, id);
         this.emit(scope, 'order.cancelled', order, { reason: input.reason });
       }
-      if (input.to === 'PICKING') await this.reserveBackorders(tx, order);
+      if (input.to === 'PICKING') await this.reserveBackorders(tx, scope, order);
       if (input.to === 'DISPATCHED') {
         await this.inventory.consume(tx, allocations, { type: 'sales_order', id });
         this.emit(scope, 'order.dispatched', order, {});
@@ -408,10 +456,14 @@ export class OrdersService {
               select: { id: true, number: true, status: true, total: true, createdAt: true },
             })
           : [];
+      // Cajas que el sistema abrió para este pedido (para saber qué caja agarrar).
+      const openMoves = await tx.stockMovement.findMany({ where: { referenceType: 'sales_order', referenceId: o.id, type: 'PRODUCTION_OUT' }, select: { variantId: true, quantity: true } });
+      const openedPacks = await this.describeOpened(tx, openMoves.map((m) => ({ variantId: m.variantId, packs: -Number(m.quantity) })));
       return {
         id: o.id,
         number: o.number,
         status: o.status,
+        openedPacks,
         statusLabel: STATUS_LABEL[o.status],
         nextStatuses: TRANSITIONS[o.status] ?? [],
         version: o.version,
@@ -463,25 +515,24 @@ export class OrdersService {
     });
   }
 
-  /** Reserva lo que faltó al confirmar; si todavía no entró la mercadería, no se puede preparar. */
-  private async reserveBackorders(tx: Tx, order: Awaited<ReturnType<OrdersService['findOrder']>>) {
-    const ctx = RequestContextStore.get();
+  /**
+   * Reserva lo que faltó al confirmar (abriendo cajas si son sueltos); si todavía no entró la
+   * mercadería, no se puede preparar.
+   */
+  private async reserveBackorders(tx: Tx, scope: UowScope, order: Awaited<ReturnType<OrdersService['findOrder']>>) {
     const pending = order.lines.filter((l) => Number(l.backorderQty) > 0);
     const kits = await this.inventory.kitComponents(tx, pending.map((l) => l.variantId));
+    const opened: OpenedPacks[] = [];
     for (const line of pending) {
       const label = `${line.variant.product.name} ${line.variant.name} (${line.variant.sku})`;
       // Combo: a cada componente le falta lo que pide el combo menos lo que ya se reservó de él.
       const reserved = (variantId: string) => line.allocations.filter((a) => a.stockItem.variantId === variantId).reduce((s, a) => s + Number(a.quantity), 0);
-      const parts = kits.get(line.variantId)?.map((c) => ({ variantId: c.variantId, quantity: Number(line.quantity) * c.quantity - reserved(c.variantId), label: `${c.sku} del ${label}` })) ?? [
-        { variantId: line.variantId, quantity: Number(line.backorderQty), label },
+      const parts = kits.get(line.variantId)?.map((c) => ({ variantId: c.variantId, sku: c.sku, quantity: Number(line.quantity) * c.quantity - reserved(c.variantId), label: `${c.sku} del ${label}` })) ?? [
+        { variantId: line.variantId, sku: line.variant.sku, quantity: Number(line.backorderQty), label },
       ];
       for (const part of parts.filter((p) => p.quantity > 0)) {
-        const allocations = await this.inventory.reserve(tx, order.warehouseId, part.variantId, part.quantity, part.label).catch((e: Error) => {
-          throw new BusinessRuleError(`Todavía falta mercadería para preparar el pedido. ${e.message}`);
-        });
-        await tx.orderAllocation.createMany({
-          data: allocations.map((a) => ({ tenantId: ctx.tenantId, orderLineId: line.id, stockItemId: a.stockItemId, lotId: a.lotId, quantity: a.quantity })),
-        });
+        const missing = await this.reserveOpeningPacks(tx, scope, order, line.id, part, part.quantity, opened);
+        if (missing > 0) throw new BusinessRuleError(`Todavía falta mercadería para preparar el pedido. Faltan ${missing} de ${part.label}.`);
       }
       await tx.salesOrderLine.update({ where: { id: line.id }, data: { backorderQty: 0 } });
     }
