@@ -21,7 +21,9 @@ export default function InventoryPage() {
   const [onlyLow, setOnlyLow] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [breaking, setBreaking] = useState(false);
-  const { data, isLoading } = useStock({ warehouseId: warehouseId || undefined, q, onlyLow });
+  const { data: rows, isLoading } = useStock({ warehouseId: warehouseId || undefined, q, onlyLow });
+  // Primero lo que hay en existencia y abajo lo que está en 0; dentro de cada grupo se mantiene el orden que manda la API.
+  const data = rows && [...rows.filter((r) => r.onHand > 0), ...rows.filter((r) => !(r.onHand > 0))];
   const { data: me } = useMe();
   const canAdjust = !!me?.permissions.includes('inventory.stock.adjust');
   const canSeeCost = !!me?.permissions.includes('catalog.cost.read');
