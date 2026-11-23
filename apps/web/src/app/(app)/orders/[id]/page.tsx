@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, use, useState } from 'react';
-import { Printer } from 'lucide-react';
+import { Check, Printer } from 'lucide-react';
 import { OrderForm } from '@/components/orders/order-form';
 import { OrderInvoices } from '@/components/orders/order-invoices';
 import { Badge } from '@/components/ui/badge';
@@ -206,7 +206,9 @@ function Lines({ order }: { order: OrderDetail }) {
   const showAvailable = order.status === 'DRAFT' || order.status === 'PENDING_REVIEW';
   const showMissing = order.lines.some((l) => l.backorderQty > 0);
   return (
-    <Card className="overflow-x-auto">
+    <>
+      <MobileLines order={order} showVat={showVat} showAvailable={showAvailable} />
+    <Card className="hidden overflow-x-auto md:block print:block">
       <table className="w-full min-w-[760px] text-sm">
         <thead className="border-b text-left text-xs text-muted-foreground">
           <tr>
@@ -277,6 +279,72 @@ function Lines({ order }: { order: OrderDetail }) {
           )}
         </tfoot>
       </table>
+    </Card>
+    </>
+  );
+}
+
+/**
+ * Productos del pedido en el celular: cantidad grande y vencimientos a la vista para armarlo en el depósito.
+ * Mientras se prepara, se puede tildar cada producto a medida que se junta (queda solo en este celular, como ayuda).
+ */
+function MobileLines({ order, showVat, showAvailable }: { order: OrderDetail; showVat: boolean; showAvailable: boolean }) {
+  const picking = order.status === 'PICKING';
+  const [done, setDone] = useState<Set<string>>(new Set());
+  const toggle = (id: string) => setDone((d) => { const n = new Set(d); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  return (
+    <Card className="divide-y md:hidden print:hidden">
+      {picking && (
+        <div className="px-4 py-2.5 text-xs text-muted-foreground">
+          Tocá cada producto a medida que lo juntás · {done.size} de {order.lines.length} listos
+        </div>
+      )}
+      {order.lines.map((l) => {
+        const checked = done.has(l.id);
+        const body = (
+          <>
+            {picking && (
+              <span className={cn('mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border-2', checked ? 'border-success bg-success text-white' : 'border-muted-foreground/40')}>
+                {checked && <Check className="h-4 w-4" />}
+              </span>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className={cn('font-medium leading-snug', checked && 'text-muted-foreground line-through')}>{l.description}</div>
+              <div className="font-mono text-xs text-muted-foreground">{l.sku}</div>
+              {l.components.length > 0 && (
+                <ul className="mt-1 text-xs text-muted-foreground">
+                  {l.components.map((c) => <li key={c.sku}>{number(c.quantity)} × {c.description}</li>)}
+                </ul>
+              )}
+              {l.lots.length > 0 && (
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {l.lots.map((x, i) => <div key={i}>{x.sku !== l.sku && <span className="font-mono">{x.sku} </span>}{x.lot ?? 'sin lote'} × {number(x.quantity)}{x.expiresAt && ` · vence ${date(x.expiresAt)}`}</div>)}
+                </div>
+              )}
+              {showAvailable && (l.available ?? 0) < l.quantity && <div className="mt-1 text-xs font-medium text-destructive">Hay {number(l.available)} disponibles</div>}
+              {l.backorderQty > 0 && <div className="mt-1 text-xs font-medium text-destructive">Faltan {number(l.backorderQty)}{l.purchaseOrder && ` · ${l.purchaseOrder.number}`}</div>}
+              <div className="mt-1 text-xs text-muted-foreground tabular-nums">
+                {money(l.unitPrice)} c/u{l.discountPct ? ` · −${number(l.discountPct)} %` : ''} · {money(l.lineTotal)}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xl font-semibold tabular-nums leading-none">{number(l.quantity)}</div>
+              <div className="mt-1 text-[11px] text-muted-foreground">unid.</div>
+            </div>
+          </>
+        );
+        return picking ? (
+          <button key={l.id} type="button" onClick={() => toggle(l.id)} aria-pressed={checked} className="flex w-full items-start gap-3 px-4 py-3 text-left">{body}</button>
+        ) : (
+          <div key={l.id} className="flex items-start gap-3 px-4 py-3">{body}</div>
+        );
+      })}
+      <div className="space-y-1 px-4 py-3 text-right text-sm">
+        {!!order.discountTotal && <div className="text-muted-foreground">Descuentos − {money(order.discountTotal)}</div>}
+        {showVat && <div className="text-muted-foreground">{order.withInvoice ? `IVA 21 % ${money(order.taxTotal)}` : 'Sin factura: no lleva IVA'}</div>}
+        <div className="text-base font-semibold">Total a cobrar {money(order.grandTotal)}</div>
+        {order.marginTotal != null && <div className="text-muted-foreground">Margen {money(order.marginTotal)}</div>}
+      </div>
     </Card>
   );
 }

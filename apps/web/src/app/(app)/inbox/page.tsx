@@ -52,8 +52,9 @@ function Inbox() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row?.id, row?.unreadCount]);
 
+  // En el celular el alto descuenta la barra de arriba y la de accesos de abajo.
   return (
-    <div className="-m-4 flex h-[calc(100dvh-3.5rem)] md:-m-6">
+    <div className="-m-4 flex h-[calc(100dvh-7.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] md:-m-6 md:h-[calc(100dvh-3.5rem)]">
       <aside className={cn('flex w-full flex-col border-r bg-card md:w-80 md:shrink-0', selected && 'hidden md:flex')}>
         <div className="space-y-2 border-b p-3">
           <div className="flex items-center gap-2">

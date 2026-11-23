@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Plus, Search, Upload } from 'lucide-react';
+import { Phone, Plus, Search, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -27,7 +27,7 @@ export default function CustomersPage() {
         <h1 className="text-2xl font-semibold">Clientes</h1>
         <span className="text-sm text-muted-foreground">{data?.total ?? '…'} en total</span>
         <div className="ml-auto flex gap-2">
-          <Button asChild variant="outline" size="sm"><Link href="/imports?kind=customers"><Upload className="h-4 w-4" /> Importar</Link></Button>
+          <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex"><Link href="/imports?kind=customers"><Upload className="h-4 w-4" /> Importar</Link></Button>
           <Button asChild size="sm"><Link href="/customers/new"><Plus className="h-4 w-4" /> Nuevo cliente</Link></Button>
         </div>
       </div>
@@ -42,7 +42,30 @@ export default function CustomersPage() {
           </Button>
         )}
       </div>
-      <Card className="overflow-x-auto">
+      {/* Celular: tarjetas con el teléfono a un toque para llamar. Compu: tabla. */}
+      <div className="space-y-2 md:hidden">
+        {isLoading && Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+        {data?.items.map((c) => (
+          <div key={c.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
+            <Link href={`/customers/${c.id}`} className="min-w-0 flex-1">
+              <div className="truncate font-medium">{c.tradeName ?? c.legalName}</div>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                {c.industry ?? c.code}
+                {c.lastOrderAt && <span>· últ. compra {date(c.lastOrderAt)}</span>}
+                {c.status !== 'ACTIVE' && <Badge tone={STATUS_TONE[c.status as keyof typeof STATUS_TONE] ?? 'neutral'}>{STATUS_LABEL[c.status] ?? c.status}</Badge>}
+                {c.missing.length > 0 && <Badge tone="warn">Falta {c.missing.map((m) => (m === 'phone' ? 'teléfono' : 'dirección')).join(' y ')}</Badge>}
+              </div>
+            </Link>
+            {c.phone && (
+              <a href={`tel:${c.phone.replace(/[^\d+]/g, '')}`} className="grid h-10 w-10 shrink-0 place-items-center rounded-full border text-primary" aria-label={`Llamar a ${c.tradeName ?? c.legalName}`}>
+                <Phone className="h-4 w-4" />
+              </a>
+            )}
+          </div>
+        ))}
+        {data && data.items.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">No hay clientes que coincidan.</p>}
+      </div>
+      <Card className="hidden overflow-x-auto md:block">
         <table className="w-full text-sm">
           <thead className="border-b text-left text-xs text-muted-foreground">
             <tr>
