@@ -26,7 +26,7 @@ class OrderEvents extends AggregateRoot {
 const LIST_BY_MODE = { mayorista: 'Mayorista', minorista: 'Minorista' } as const;
 
 /** Cómo ve el cliente cada estado: en su idioma y sin los pasos internos. */
-const TRACKING_STEP: Record<string, { step: WebOrderTracking['step']; label: string; detail: string }> = {
+export const TRACKING_STEP: Record<string, { step: WebOrderTracking['step']; label: string; detail: string }> = {
   PENDING_REVIEW: { step: 'received', label: 'Recibido', detail: 'Recibimos tu pedido y lo estamos revisando.' },
   DRAFT: { step: 'received', label: 'Recibido', detail: 'Recibimos tu pedido y lo estamos revisando.' },
   CONFIRMED: { step: 'confirmed', label: 'Confirmado', detail: 'Tu pedido está confirmado. Pronto empezamos a prepararlo.' },
@@ -39,7 +39,7 @@ const TRACKING_STEP: Record<string, { step: WebOrderTracking['step']; label: str
 };
 
 /** Últimos 8 dígitos: alcanza para comparar teléfonos escritos con o sin 0, 15, +54 o 9. */
-const phoneKey = (phone: string | null | undefined) => (phone ?? '').replace(/\D/g, '').slice(-8);
+export const phoneKey = (phone: string | null | undefined) => (phone ?? '').replace(/\D/g, '').slice(-8);
 
 /**
  * Pedidos que llegan de la web pública (saboracasa.com.ar). Se guardan pendientes de revisión,
@@ -77,8 +77,26 @@ export class WebOrdersService {
     );
   }
 
+  /**
+   * Pedido del portal de clientes: el cliente ya está identificado (entró con su WhatsApp), así que
+   * el pedido va a su ficha y con su lista de precios. Queda "Por revisar" como los de la web.
+   */
+  receiveFromPortal(customer: { id: string; name: string; phone: string; priceListId: string | null }, input: Pick<WebOrderInput, 'lines' | 'notes' | 'total'>) {
+    return this.create(
+      { name: customer.name, phone: customer.phone, mode: 'mayorista', lines: input.lines, combos: [], notes: input.notes, total: input.total },
+      'Recibido desde el portal de clientes',
+      undefined,
+      { customerId: customer.id, priceListId: customer.priceListId, channel: 'portal' },
+    );
+  }
+
   /** Crea el pedido "Por revisar" en la empresa del contexto actual. */
-  private async create(input: WebOrderInput, reason: string, origin?: string) {
+  private async create(
+    input: WebOrderInput,
+    reason: string,
+    origin?: string,
+    portal?: { customerId: string; priceListId: string | null; channel: 'portal' },
+  ) {
     const ctx = RequestContextStore.get();
     const phone = normalizePhone(input.phone);
     if (!phone) throw new BusinessRuleError('Indicá un teléfono válido');
@@ -90,7 +108,10 @@ export class WebOrdersService {
       const warehouse = branch && (await tx.warehouse.findFirst({ where: { branchId: branch.id, isActive: true }, orderBy: { code: 'asc' }, select: { id: true } }));
       if (!branch || !warehouse) throw new BusinessRuleError('La empresa no tiene depósito configurado');
 
-      const priceList = await tx.priceList.findFirst({ where: { name: { equals: LIST_BY_MODE[input.mode], mode: 'insensitive' } }, select: { id: true } });
+      // El portal usa la lista de la ficha del cliente (si tiene); la web, la del modo elegido.
+      const priceList = portal?.priceListId
+        ? { id: portal.priceListId }
+        : await tx.priceList.findFirst({ where: { name: { equals: LIST_BY_MODE[input.mode], mode: 'insensitive' } }, select: { id: true } });
 
       // Mismo SKU repetido en el carrito: se suma. Los combos vienen por su código corto ("ESENCIAL")
       // y son un producto más (SKU "COMBO-ESENCIAL"): una línea que al reservarse descuenta cada sobre.
@@ -114,14 +135,14 @@ export class WebOrdersService {
         100,
       );
 
-      let customerId = await this.crm.findIdByPhone(tx, phone);
+      let customerId = portal?.customerId ?? (await this.crm.findIdByPhone(tx, phone));
       const createdCustomer = !customerId;
       if (!customerId) customerId = (await this.crm.createWebProspect(tx, scope, { name: input.name, phone, priceListId: priceList?.id ?? null })).id;
 
       const notes = [
         origin,
         input.notes,
-        `Pedido web (${input.mode}) de ${input.name}, tel. ${input.phone}.`,
+        portal ? `Pedido del portal de clientes de ${input.name}, tel. ${input.phone}.` : `Pedido web (${input.mode}) de ${input.name}, tel. ${input.phone}.`,
         unknown.length ? `Códigos que no están en el catálogo: ${unknown.map((s) => `${s} × ${qtyBySku.get(s)}`).join(', ')}.` : null,
         noPrice.length ? `Sin precio en la lista: ${noPrice.map((i) => priced.get(i.variantId)!.sku).join(', ')}.` : null,
       ]
@@ -139,7 +160,7 @@ export class WebOrdersService {
           number,
           customerId,
           status: 'PENDING_REVIEW',
-          channel: 'web',
+          channel: portal?.channel ?? 'web',
           subtotal: pricing.subtotal,
           discountTotal: pricing.discountTotal,
           total: pricing.total,
@@ -164,9 +185,9 @@ export class WebOrdersService {
         },
       });
       const events = new OrderEvents();
-      events.emit(new DomainEvent('order.created', 'order', id, { orderId: id, number, customerId, total: pricing.total, channel: 'web' }));
+      events.emit(new DomainEvent('order.created', 'order', id, { orderId: id, number, customerId, total: pricing.total, channel: portal?.channel ?? 'web' }));
       scope.track(events);
-      scope.auditLog({ action: 'order.create', entityType: 'order', entityId: id, after: { number, total: pricing.total, channel: 'web' } });
+      scope.auditLog({ action: 'order.create', entityType: 'order', entityId: id, after: { number, total: pricing.total, channel: portal?.channel ?? 'web' } });
       return { number, status: 'PENDING_REVIEW' as const, total: pricing.total };
     });
   }

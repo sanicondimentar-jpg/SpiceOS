@@ -82,3 +82,18 @@ export const useImport = (kind: ImportKind) => {
     },
   });
 };
+
+/** Portal de clientes: sesiones abiertas del cliente (quién entró y cuándo). */
+export const usePortalAccess = (customerId: string) =>
+  useQuery({
+    queryKey: ['portal-access', customerId],
+    queryFn: () => api<import('@spiceos/contracts').PortalCustomerAccess>(`/crm/customers/${customerId}/portal`),
+  });
+
+export const useRevokePortal = (customerId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ closed: number }>(`/crm/customers/${customerId}/portal/revoke`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['portal-access', customerId] }),
+  });
+};

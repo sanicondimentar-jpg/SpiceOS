@@ -28,6 +28,7 @@ import { InvoicingModule } from './modules/invoicing/invoicing.module';
 import { ReceiptsModule } from './modules/receipts/receipts.module';
 import { SalesAssistantModule } from './modules/sales-assistant/sales-assistant.module';
 import { LogisticsModule } from './modules/logistics/logistics.module';
+import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { LogisticsModule } from './modules/logistics/logistics.module';
     ReceiptsModule,
     SalesAssistantModule,
     LogisticsModule,
+    CustomerPortalModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

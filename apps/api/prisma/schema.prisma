@@ -308,6 +308,7 @@ model Customer {
   priceList     PriceList?        @relation(fields: [priceListId], references: [id])
   charges       CustomerCharge[]
   payments      CustomerPayment[]
+  portalSessions PortalSession[]
 
   @@unique([tenantId, code])
   @@unique([tenantId, taxId])
@@ -2028,4 +2029,39 @@ model AiInstruction {
 
   @@index([tenantId, revokedAt])
   @@map("ai_instructions")
+}
+
+/// Ingreso al portal de clientes: el portal muestra un código y el cliente lo manda por WhatsApp.
+model PortalLoginRequest {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  code       String
+  tokenHash  String    @map("token_hash")
+  status     String    @default("PENDING") // PENDING, OK, NOT_CUSTOMER
+  phone      String?
+  customerId String?   @map("customer_id") @db.Uuid
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  verifiedAt DateTime? @map("verified_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, code, status])
+  @@map("portal_login_requests")
+}
+
+/// Sesión abierta del portal de clientes (un celular o computadora del cliente).
+model PortalSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  customerId String    @map("customer_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  phone      String
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, customerId])
+  @@map("portal_sessions")
 }

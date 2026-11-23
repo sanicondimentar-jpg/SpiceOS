@@ -10,3 +10,4 @@ export * from './supplier-accounts';
 export * from './collections';
 export * from './documents';
 export * from './staff';
+export * from './portal';
