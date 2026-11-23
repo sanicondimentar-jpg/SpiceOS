@@ -31,7 +31,7 @@ export class MessagingAiTools {
         FROM conversations c
         JOIN messages m ON m.conversation_id = c.id
         LEFT JOIN customers cu ON cu.id = c.customer_id
-        WHERE m.sent_at >= ${day}::date AND m.sent_at < ${day}::date + 1
+        WHERE m.sent_at >= ${day}::date AND m.sent_at < ${day}::date + 1 AND NOT c.is_internal
         GROUP BY c.id, cu.legal_name
         ORDER BY max(m.sent_at) DESC
         LIMIT 100`,

@@ -9,3 +9,4 @@ export * from './invoicing';
 export * from './supplier-accounts';
 export * from './collections';
 export * from './documents';
+export * from './staff';

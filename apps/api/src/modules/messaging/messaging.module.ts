@@ -13,6 +13,6 @@ import { WhatsappWebhookController } from './whatsapp.webhook.controller';
   imports: [CrmModule],
   controllers: [WhatsappWebhookController, ConversationsController, WhatsappAccountController],
   providers: [WhatsappClient, InboundMessageService, ConversationsService, WhatsappAccountService, MessageEnrichmentConsumer, MessagingAiTools],
-  exports: [WhatsappClient],
+  exports: [WhatsappClient, ConversationsService],
 })
 export class MessagingModule {}

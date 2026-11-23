@@ -8,6 +8,7 @@ import { DomainEvent } from '../../shared/domain/domain-event';
 import { RequestContextStore } from '../../shared/tenancy/request-context';
 import { CrmFacade } from '../crm/crm.facade';
 import { normalizePhone } from '../crm/domain/customer';
+import { findStaffByPhone } from '../../shared/staff/staff-phone';
 import { nextStatus } from './message-status';
 
 export interface WebhookPayload {
@@ -127,8 +128,10 @@ export class InboundMessageService {
     const phone = normalizePhone(msg.from)!;
     if (await this.system.message.findUnique({ where: { waMessageId: msg.id }, select: { id: true } })) return; // Meta reintenta
 
-    let customerId = await this.uow.read((tx) => this.crm.findIdByPhone(tx, phone));
-    if (!customerId && account.autoCreateCustomer) {
+    // Un usuario del sistema (celular vinculado a su ficha) no es un cliente: no se le crea lead ni prospecto.
+    const staff = await this.uow.read((tx) => findStaffByPhone(tx, phone));
+    let customerId = staff ? null : await this.uow.read((tx) => this.crm.findIdByPhone(tx, phone));
+    if (!customerId && !staff && account.autoCreateCustomer) {
       customerId = (await this.crm.createProspect(name ?? phone, phone)).id;
     }
 
@@ -137,7 +140,7 @@ export class InboundMessageService {
       const window = new Date(sentAt.getTime() + 24 * 3600_000);
       const existing = await tx.conversation.findUnique({ where: { accountId_waContactId: { accountId: account.id, waContactId: phone } } });
       let leadId = existing?.leadId ?? null;
-      if (!customerId && !existing?.customerId && !leadId) {
+      if (!staff && !customerId && !existing?.customerId && !leadId) {
         const lead =
           (await tx.lead.findFirst({ where: { phone, status: { not: 'CONVERTED' } } })) ??
           (await tx.lead.create({ data: { tenantId: account.tenantId, name: name ?? phone, phone, source: 'whatsapp' } }));
@@ -151,6 +154,7 @@ export class InboundMessageService {
               windowExpiresAt: window,
               status: 'OPEN',
               unreadCount: { increment: 1 },
+              isInternal: !!staff,
               ...(name && { contactName: name }),
               ...(customerId && !existing.customerId && { customerId }),
               ...(leadId && !existing.leadId && { leadId }),
@@ -167,6 +171,7 @@ export class InboundMessageService {
               lastMessageAt: sentAt,
               windowExpiresAt: window,
               unreadCount: 1,
+              isInternal: !!staff,
             },
           });
       const text = messageText(msg);
@@ -183,7 +188,8 @@ export class InboundMessageService {
         },
       });
       const linkedCustomer = conversation.customerId;
-      await tx.activity.create({
+      // El historial de actividad es de clientes y leads; un chat interno no suma actividad.
+      if (linkedCustomer || conversation.leadId) await tx.activity.create({
         data: {
           tenantId: account.tenantId,
           type: 'WHATSAPP',

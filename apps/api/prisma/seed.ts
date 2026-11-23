@@ -5,11 +5,13 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { ALL_PERMISSIONS, PERMISSIONS } from '@spiceos/contracts';
+import { permissionsToGrant } from '../src/shared/auth/role-seed';
 
 const prisma = new PrismaClient({ datasourceUrl: process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL });
 
 const ROLES: { key: string; name: string; maxDiscount: number; permissions: string[] }[] = [
-  { key: 'admin', name: 'Administrador', maxDiscount: 100, permissions: ALL_PERMISSIONS },
+  // Dueño: siempre todos los permisos (también los que se agreguen en el futuro).
+  { key: 'admin', name: 'Dueño', maxDiscount: 100, permissions: ALL_PERMISSIONS },
   {
     key: 'gerente',
     name: 'Gerencia',
@@ -95,15 +97,33 @@ async function main() {
     update: {},
   });
 
+  // Los permisos de cada rol se editan desde Configuración → Usuarios y permisos: el seed (que corre en cada
+  // deploy) no pisa esos cambios. Solo arma los roles nuevos y reparte los permisos que todavía no se repartieron.
+  const DISTRIBUTED = 'seed.distributed_permissions';
+  const setting = await prisma.setting.findUnique({ where: { tenantId_key: { tenantId, key: DISTRIBUTED } } });
+  const distributed = Array.isArray(setting?.value) ? (setting.value as string[]) : [];
   for (const r of ROLES) {
+    const existing = await prisma.role.findUnique({ where: { tenantId_key: { tenantId, key: r.key } }, include: { permissions: true } });
     const role = await prisma.role.upsert({
       where: { tenantId_key: { tenantId, key: r.key } },
       create: { tenantId, key: r.key, name: r.name, isSystem: true, maxDiscount: r.maxDiscount },
-      update: { maxDiscount: r.maxDiscount },
+      update: {},
     });
-    await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
-    await prisma.rolePermission.createMany({ data: r.permissions.map((permissionKey) => ({ roleId: role.id, permissionKey })) });
+    const grant = permissionsToGrant({
+      isOwner: r.key === 'admin',
+      isNew: !existing,
+      defaults: r.permissions,
+      current: existing?.permissions.map((p) => p.permissionKey) ?? [],
+      distributed,
+      all: ALL_PERMISSIONS,
+    });
+    if (grant.length) await prisma.rolePermission.createMany({ data: grant.map((permissionKey) => ({ roleId: role.id, permissionKey })), skipDuplicates: true });
   }
+  await prisma.setting.upsert({
+    where: { tenantId_key: { tenantId, key: DISTRIBUTED } },
+    create: { tenantId, key: DISTRIBUTED, value: ALL_PERMISSIONS },
+    update: { value: ALL_PERMISSIONS },
+  });
 
   const admin = await prisma.user.upsert({
     where: { email: process.env.SEED_ADMIN_EMAIL ?? 'admin@sanicondimentar.local' },

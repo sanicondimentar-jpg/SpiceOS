@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { UnitOfWork } from '../../shared/unit-of-work';
 import { BusinessRuleError, NotFoundError } from '../../shared/domain/errors';
 import { RequestContextStore } from '../../shared/tenancy/request-context';
+import { PERMISSIONS } from '@spiceos/contracts';
 import { CrmFacade } from '../crm/crm.facade';
 import { WhatsappClient } from './whatsapp.client';
 
@@ -22,6 +23,14 @@ function assistantState(
   return { state: 'active', reason: null, pausedUntil: null };
 }
 
+/**
+ * Los chats internos (dueños y equipo hablando con la IA) solo los ve quien tiene acceso a "Órdenes a la IA":
+ * ahí se habla de costos, deudas y ventas.
+ */
+function visibility(): Prisma.ConversationWhereInput {
+  return RequestContextStore.get().permissions.has(PERMISSIONS.ai.read) ? {} : { isInternal: false };
+}
+
 /** Bandeja de WhatsApp: chats, respuesta desde el sistema y vínculo con clientes y pedidos. */
 @Injectable()
 export class ConversationsService {
@@ -36,6 +45,7 @@ export class ConversationsService {
       const q = query.q?.trim();
       const digits = q?.replace(/\D/g, '');
       const where: Prisma.ConversationWhereInput = {
+        ...visibility(),
         ...(query.status !== 'ALL' && { status: query.status === 'OPEN' ? { not: 'CLOSED' } : 'CLOSED' }),
         ...(q && {
           OR: [
@@ -57,7 +67,7 @@ export class ConversationsService {
             messages: { orderBy: { sentAt: 'desc' }, take: 1, select: { body: true, type: true, direction: true, transcript: true } },
           },
         }),
-        tx.conversation.aggregate({ where: { status: { not: 'CLOSED' } }, _sum: { unreadCount: true } }),
+        tx.conversation.aggregate({ where: { status: { not: 'CLOSED' }, isInternal: false }, _sum: { unreadCount: true } }),
       ]);
       const now = new Date();
       return {
@@ -68,6 +78,7 @@ export class ConversationsService {
           contactName: c.contactName,
           customer: c.customer && { id: c.customer.id, name: c.customer.tradeName ?? c.customer.legalName },
           status: c.status,
+          internal: c.isInternal,
           unreadCount: c.unreadCount,
           lastMessageAt: c.lastMessageAt,
           windowOpen: !!c.windowExpiresAt && c.windowExpiresAt > now,
@@ -83,7 +94,7 @@ export class ConversationsService {
   /** Total de chats sin leer (para el aviso del menú). */
   unread() {
     return this.uow.read(async (tx) => {
-      const r = await tx.conversation.aggregate({ where: { status: { not: 'CLOSED' } }, _sum: { unreadCount: true } });
+      const r = await tx.conversation.aggregate({ where: { status: { not: 'CLOSED' }, isInternal: false }, _sum: { unreadCount: true } });
       return { unread: r._sum.unreadCount ?? 0 };
     });
   }
@@ -91,7 +102,7 @@ export class ConversationsService {
   get(id: string) {
     return this.uow.read(async (tx) => {
       const c = await tx.conversation.findFirst({
-        where: { id },
+        where: { id, ...visibility() },
         include: {
           customer: { select: { id: true, code: true, legalName: true, tradeName: true, phone: true, status: true } },
           account: { select: { assistantMode: true } },
@@ -238,7 +249,7 @@ export class ConversationsService {
   /** Foto, audio o documento: se baja de Meta en el momento (Meta lo guarda unos 30 días). */
   async media(messageId: string) {
     const m = await this.uow.read((tx) =>
-      tx.message.findFirst({ where: { id: messageId }, include: { conversation: { include: { account: true } } } }),
+      tx.message.findFirst({ where: { id: messageId, conversation: visibility() }, include: { conversation: { include: { account: true } } } }),
     );
     if (!m?.mediaKey) throw new NotFoundError('Archivo del mensaje', messageId);
     try {

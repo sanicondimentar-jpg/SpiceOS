@@ -1,11 +1,22 @@
 import Link from 'next/link';
-import { FolderOpen, KeyRound, MessageCircle, Receipt, Sparkles, Wallet } from 'lucide-react';
+import { FolderOpen, KeyRound, MessageCircle, Receipt, Sparkles, UserCog, Wallet } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
 export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-semibold">Configuración</h1>
+      <Link href="/settings/users" className="block">
+        <Card className="hover:bg-accent">
+          <CardContent className="flex items-center gap-3 p-5">
+            <UserCog className="h-5 w-5 text-primary" />
+            <div>
+              <div className="font-medium">Usuarios y permisos</div>
+              <div className="text-sm text-muted-foreground">Rol de cada usuario, qué puede hacer cada rol y el celular con el que le da órdenes a la IA por WhatsApp.</div>
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
       <Link href="/settings/invoicing" className="block">
         <Card className="hover:bg-accent">
           <CardContent className="flex items-center gap-3 p-5">
