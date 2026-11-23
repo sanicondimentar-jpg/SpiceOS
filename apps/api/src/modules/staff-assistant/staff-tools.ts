@@ -519,9 +519,15 @@ export class StaffTools {
     const order = await this.uow.read(async (tx) => one(await findOrder(tx, number), number));
     const r = to === 'CONFIRMED' ? await this.orders.confirm(order.id) : await this.orders.transition(order.id, { to });
     const shortages = 'shortages' in r && Array.isArray(r.shortages) && r.shortages.length ? r.shortages : null;
+    const opened = 'openedPacks' in r && r.openedPacks.length ? r.openedPacks.map((p) => `${p.packs} × ${p.description} (${p.sku})`).join(', ') : null;
     return {
       summary: `Pasó el pedido ${order.number} a ${orderStatusLabel(to)}`,
-      data: { numero: order.number, etapa: orderStatusLabel(to), ...(shortages && { aviso: 'Faltó stock de algunos productos: quedaron en la nota de pedido al proveedor.' }) },
+      data: {
+        numero: order.number,
+        etapa: orderStatusLabel(to),
+        ...(opened && { cajas_abiertas: `Para los sueltos se abrieron: ${opened}` }),
+        ...(shortages && { aviso: 'Faltó stock de algunos productos: quedaron en la nota de pedido al proveedor.' }),
+      },
     };
   }
 

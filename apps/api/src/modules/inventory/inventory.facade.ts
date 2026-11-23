@@ -4,6 +4,7 @@ import type { Tx } from '../../shared/prisma/prisma.service';
 import { BusinessRuleError } from '../../shared/domain/errors';
 import { RequestContextStore } from '../../shared/tenancy/request-context';
 import { Allocation, allocateFefo } from './fefo';
+import { openableUnits, unitsFromPack, type PackSource } from './pack-sources';
 
 export interface MovementInput {
   warehouseId: string;
@@ -175,13 +176,42 @@ export class InventoryFacade {
   async available(tx: Tx, warehouseId: string, variantIds: string[]): Promise<Map<string, number>> {
     if (!variantIds.length) return new Map();
     const kits = await this.kitComponents(tx, variantIds);
-    if (kits.size) {
-      const componentIds = [...kits.values()].flatMap((c) => c.map((x) => x.variantId));
-      const base = await this.stockAvailable(tx, warehouseId, [...new Set([...variantIds.filter((id) => !kits.has(id)), ...componentIds])]);
-      for (const [kitId, comps] of kits) base.set(kitId, kitAvailable(comps, base));
-      return base;
+    const componentIds = [...kits.values()].flatMap((c) => c.map((x) => x.variantId));
+    const ids = [...new Set([...variantIds.filter((id) => !kits.has(id)), ...componentIds])];
+    const base = await this.stockAvailable(tx, warehouseId, ids);
+    // Un suelto también cuenta los que salen de abrir cajas (el sistema las abre solo al confirmar).
+    const sources = await this.packSources(tx, warehouseId, ids);
+    for (const [unitId, list] of sources) base.set(unitId, (base.get(unitId) ?? 0) + openableUnits(list));
+    for (const [kitId, comps] of kits) base.set(kitId, kitAvailable(comps, base));
+    return base;
+  }
+
+  /**
+   * Cajas de las que puede salir cada suelto ("-U"): las del mismo producto que traen ese mismo
+   * sobre, paquete o frasco, con sus cajas disponibles. Los que no son sueltos no aparecen.
+   */
+  async packSources(tx: Tx, warehouseId: string, variantIds: string[]): Promise<Map<string, PackSource[]>> {
+    const out = new Map<string, PackSource[]>();
+    if (!variantIds.length) return out;
+    const units = await tx.productVariant.findMany({
+      where: { id: { in: [...new Set(variantIds)] }, sku: { endsWith: '-U', mode: 'insensitive' } },
+      select: { id: true, sku: true, name: true, productId: true },
+    });
+    if (!units.length) return out;
+    const packs = await tx.productVariant.findMany({
+      where: { productId: { in: [...new Set(units.map((u) => u.productId))] }, isActive: true, NOT: { sku: { endsWith: '-U', mode: 'insensitive' } }, kitComponents: { none: {} } },
+      select: { id: true, sku: true, name: true, productId: true },
+    });
+    const stock = await this.stockAvailable(tx, warehouseId, packs.map((p) => p.id));
+    for (const u of units) {
+      const list: PackSource[] = [];
+      for (const p of packs.filter((x) => x.productId === u.productId)) {
+        const perPack = unitsFromPack(u, p);
+        if (perPack) list.push({ variantId: p.id, sku: p.sku, perPack, available: stock.get(p.id) ?? 0 });
+      }
+      if (list.length) out.set(u.id, list);
     }
-    return this.stockAvailable(tx, warehouseId, variantIds);
+    return out;
   }
 
   private async stockAvailable(tx: Tx, warehouseId: string, variantIds: string[]): Promise<Map<string, number>> {
